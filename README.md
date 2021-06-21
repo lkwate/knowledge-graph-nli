@@ -9,11 +9,10 @@ pip install -r requirements.txt
 # A usecase
 ```python
 import os
-from .dp_model.dp_transformer import DPTransformer
-from .dp_model.dp_tokenizer import DPTokenizer
+from .dp_model.model import DPTransformer
+from .dp_model.tokenizer import DPTokenizer
 
 config = {}
-tokenizer = DPTokenizer()
 model = DPTransformer("self-attention", config)
 # model = DPTransformer("FTransform", config)
 
