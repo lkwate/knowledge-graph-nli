@@ -23,6 +23,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 @click.option("--val_check_interval", type=float, default=0.5)
 @click.option("--patience_early_stopping", type=float, default=5)
 @click.option("--hidden_dim", type=int, default=768)
+@click.option("--accumulate_grad_batches", type=int, default=1)
 def main(
     train_data_path: str,
     val_data_path: str,
@@ -35,7 +36,8 @@ def main(
     max_epochs: int,
     val_check_interval: float,
     patience_early_stopping: float,
-    hidden_dim: int
+    hidden_dim: int,
+    accumulate_grad_batches: int
 ):
     config = {
         "train_data_path": train_data_path,
@@ -71,6 +73,7 @@ def main(
     config_trainer = {
         "max_epochs": max_epochs,
         "val_check_interval": val_check_interval,
+        "accumulate_grad_batches": accumulate_grad_batches
     }
     if torch.cuda.is_available():
         config_trainer["gpus"] = -1
