@@ -1,12 +1,12 @@
 import copy
 from loguru import logger
 import torch
-from .dataset import NLIDataModule
-from .model import Encoder, DpsaLayer, LightningDPTransformer
+from core.dataset import NLIDataModule
+from core.model import Encoder, DpsaLayer, LightningDPTransformer
 import click
 from transformers import BertModel, BertTokenizer
 import pytorch_lightning as pl
-from .model import LightningDPTransformer
+from core.model import LightningDPTransformer
 from pytorch_lightning.callbacks import EarlyStopping
 
 
@@ -50,21 +50,21 @@ def main(
     }
 
     logger.info(f"model initialisation from {model_name}")
-    att_pretrained = BertModel.from_pretrained(model_name)
-    attn = Encoder(att_pretrained.config)
+    attn_pretrained = BertModel.from_pretrained(model_name)
+    attn = Encoder(attn_pretrained.config)
     state_dict = {
         key: value
-        for key, value in att_pretrained.state_dict().items()
+        for key, value in attn_pretrained.state_dict().items()
         if not key.startswith("pooler")
     }
     attn.load_state_dict(state_dict)
 
-    dpsa_pretrained = copy.deepcopy(att_pretrained)
+    dpsa_pretrained = copy.deepcopy(attn_pretrained.encoder)
     dpsa = DpsaLayer(dpsa_pretrained.config)
     dpsa.load_state_dict(dpsa_pretrained.state_dict())
 
     tokenizer = BertTokenizer.from_pretrained(model_name)
-    model = LightningDPTransformer(attn, dpsa, tokenizer, max_length)
+    model = LightningDPTransformer(attn, dpsa, tokenizer, config, max_length)
     data_module = NLIDataModule(tokenizer, config)
 
     logger.info("model initialisation completed")
