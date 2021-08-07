@@ -13,16 +13,17 @@ class NLIDataset(Dataset):
     def __init__(
         self,
         tokenizer: AutoTokenizer,
-        dataset_config: Dict[str, Union[str, float, int]],
+        config: Dict[str, Union[str, float, int]],
         train: bool = True,
     ):
         super().__init__()
         self.tokenizer = tokenizer
         if train:
-            self.data = pd.read_csv(dataset_config["train_data_path"])
+            self.data = pd.read_csv(config["train_data_path"])
         else:
-            self.data = pd.read_csv(dataset_config["val_data_path"])
-        self.max_length = dataset_config.get("max_length", 512)
+            self.data = pd.read_csv(config["val_data_path"])
+        self.data = self.data[self.data["label"] != "neutral"]
+        self.max_length = config.get("max_length", 512)
         self.label_factory = {"entailment": 1, "contradiction": -1, "neutral": 0}
 
     def sentence_and_cut(self, sentence):

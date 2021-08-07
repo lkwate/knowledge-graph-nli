@@ -22,6 +22,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 @click.option("--max_epochs", type=int, default=10)
 @click.option("--val_check_interval", type=float, default=0.5)
 @click.option("--patience_early_stopping", type=float, default=5)
+@click.option("--hidden_dim", type=int, default=768)
 def main(
     train_data_path: str,
     val_data_path: str,
@@ -34,6 +35,7 @@ def main(
     max_epochs: int,
     val_check_interval: float,
     patience_early_stopping: float,
+    hidden_dim: int
 ):
     config = {
         "train_data_path": train_data_path,
@@ -44,6 +46,7 @@ def main(
         "lr_patience_scheduling": lr_patience_scheduling,
         "max_length": max_length,
         "model_name": model_name,
+        "hidden_dim": hidden_dim
     }
 
     logger.info(f"model initialisation from {model_name}")

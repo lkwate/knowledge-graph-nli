@@ -256,9 +256,11 @@ class LightningDPTransformer(LightningModule):
     ):
         super().__init__()
         self.model = DPTransformer(attn, dpsa, tokenizer, max_input_length)
+        self.linear = nn.Linear(config["hidden_dim"], 1)
         self.lr = config["lr"]
         self.factor = config["lr_decay"]
         self.patience = config["lr_patience_scheduling"]
+        self.criterion = nn.CosineEmbeddingLoss()
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.lr)
@@ -276,8 +278,12 @@ class LightningDPTransformer(LightningModule):
         x, y, label = batch[0], batch[1], batch[2]
         x, lengths_x = x[0].squeeze(1), x[1].squeeze(1)
         y, lengths_y = y[0].squeeze(1), y[1].squeeze(1)
-        output = self.model(x, lengths_x, y, lengths_y)
-        # TODO: implement the computation of the loss value.
+        out_x_y, out_y_x = self.model(x, lengths_x, y, lengths_y)
+        out_x_y = self.linear(out_x_y).squeeze(-1)
+        out_y_x = self.linear(out_y_x).squeeze(-1)
+        loss = self.criterion(out_x_y, out_y_x, label)
+        
+        return loss
 
     def training_step(self, batch, batch_idx) -> torch.Tensor:
         loss = self.compute_loss(batch)
