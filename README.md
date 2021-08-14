@@ -6,6 +6,11 @@ python3 -m install pip
 pip install -r requirements.txt
 ```
 
+# Train
+```
+python3 trainer.py "multinli_1.0_train.csv" "multinli_1.0_dev_matched.csv" 4 --max_epochs 10
+```
+
 # A usecase
 ```python
 import os

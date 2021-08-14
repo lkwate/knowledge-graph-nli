@@ -51,6 +51,7 @@ def main(
         "hidden_dim": hidden_dim
     }
 
+    logger.info("")
     logger.info(f"model initialisation from {model_name}")
     attn_pretrained = BertModel.from_pretrained(model_name)
     attn = Encoder(attn_pretrained.config)
