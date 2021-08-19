@@ -126,7 +126,7 @@ class DPTransformer(nn.Module):
 
     def forward(self, x, lengths_x, y, lengths_y):
         """
-        input : `x`, `y` (list of bs sentences)
+        input : `x`, `y` (list of bs sentences indices) : (bs, x_len) and (bs, y_len)
         output : dpsa(x, y), dpsa(y, x)
         """
         bs = x.shape[0]
@@ -292,5 +292,5 @@ class LightningDPTransformer(LightningModule):
 
     def validation_step(self, batch, batch_idx) -> torch.Tensor:
         loss = self.compute_loss(batch)
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar = True)
         return loss

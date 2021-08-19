@@ -24,6 +24,8 @@ from pytorch_lightning.callbacks import EarlyStopping
 @click.option("--patience_early_stopping", type=float, default=5)
 @click.option("--hidden_dim", type=int, default=768)
 @click.option("--accumulate_grad_batches", type=int, default=1)
+@click.option("--train_n_samples", type=int, default=-1)
+@click.option("--val_n_samples", type=int, default=-1)
 def main(
     train_data_path: str,
     val_data_path: str,
@@ -37,7 +39,9 @@ def main(
     val_check_interval: float,
     patience_early_stopping: float,
     hidden_dim: int,
-    accumulate_grad_batches: int
+    accumulate_grad_batches: int,
+    train_n_samples : int,
+    val_n_samples : int
 ):
     config = {
         "train_data_path": train_data_path,
@@ -48,10 +52,12 @@ def main(
         "lr_patience_scheduling": lr_patience_scheduling,
         "max_length": max_length,
         "model_name": model_name,
-        "hidden_dim": hidden_dim
+        "hidden_dim": hidden_dim,
+        "train_n_samples" : train_n_samples,
+        "val_n_samples": val_n_samples 
     }
 
-    logger.info("")
+    #logger.info("")
     logger.info(f"model initialisation from {model_name}")
     attn_pretrained = BertModel.from_pretrained(model_name)
     attn = Encoder(attn_pretrained.config)
@@ -68,6 +74,8 @@ def main(
 
     tokenizer = BertTokenizer.from_pretrained(model_name)
     model = LightningDPTransformer(attn, dpsa, tokenizer, config, max_length)
+    
+    logger.info("Dataset...")
     data_module = NLIDataModule(tokenizer, config)
 
     logger.info("model initialisation completed")
