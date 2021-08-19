@@ -52,8 +52,8 @@ class NLIDataset(Dataset):
             idx = idx.tolist()
 
         item = self.data.iloc[idx]
-        output1 = self.to_tensor(item["sentence1"])
-        output2 = self.to_tensor(item["sentence2"])
+        output1 = self.to_tensor(str(item["sentence1"]))
+        output2 = self.to_tensor(str(item["sentence2"]))
         label = item["label"]
         label = self.label_factory[label]
 
