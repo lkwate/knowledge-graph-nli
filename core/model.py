@@ -1,7 +1,7 @@
 """Definition of the Double Probing Transformer"""
 from typing import Any, Dict, Optional
 from transformers import BertModel, BertConfig
-from transformers.models.bert.modeling_bert import BertEncoder
+from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -50,8 +50,9 @@ class Encoder(BertModel):
 
 
 class DpsaLayer(BertEncoder):
-    def __init__(self, config: BertConfig):
+    def __init__(self, config : BertConfig):
         super(DpsaLayer, self).__init__(config)
+        self.pooler = BertPooler(config)
 
     def forward(
         self,
@@ -64,21 +65,25 @@ class DpsaLayer(BertEncoder):
         use_cache=None,
         output_attentions=False,
         output_hidden_states=False,
-    ):
+        #return_dict=True,
+    ) : 
+        #bs, seq_len, hidden_size = hidden_states.shape
+        #x = super()(
         x = super().forward(
-            hidden_states=hidden_states,
-            attention_mask=attention_mask,
-            head_mask=head_mask,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask,
-            past_key_values=past_key_values,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=True,
+            hidden_states = hidden_states,
+            attention_mask = attention_mask,
+            head_mask = head_mask,
+            encoder_hidden_states = encoder_hidden_states,
+            encoder_attention_mask = encoder_attention_mask,
+            past_key_values = past_key_values,
+            use_cache = use_cache,
+            output_attentions = output_attentions,
+            output_hidden_states = output_hidden_states,
+            return_dict=True
         )
-        return x["last_hidden_state"]
-
+        sequence_output = x["last_hidden_state"]
+        pooler_output = self.pooler(sequence_output)
+        return sequence_output, pooler_output
 
 class DPTransformer(nn.Module):
     def __init__(
@@ -96,9 +101,8 @@ class DPTransformer(nn.Module):
         self.max_input_length = max_input_length
 
     def tokenize_and_cut(self, sentence):
-        tokens = self.tokenizer.tokenize(sentence)
-        tokens = tokens[: self.max_input_length]
-        return self.tokenizer.convert_tokens_to_ids(tokens)
+        tokens = self.tokenizer.encode(sentence)
+        return tokens
 
     def to_tensor(self, sentences):
         return to_tensor(
@@ -126,7 +130,7 @@ class DPTransformer(nn.Module):
 
     def forward(self, x, lengths_x, y, lengths_y):
         """
-        input : `x`, `y` (list of bs sentences)
+        input : `x`, `y` (list of bs sentences indices) : (bs, x_len) and (bs, y_len)
         output : dpsa(x, y), dpsa(y, x)
         """
         bs = x.shape[0]
@@ -204,8 +208,8 @@ class DPTransformer(nn.Module):
             encoder_attention_mask=y_mask,
         )  # (bs, y_len, dim)
 
-        a_x_y = self.dot_product(a_x_y)  # (bs, dim, dim)
-        a_y_x = self.dot_product(a_y_x)  # (bs, dim, dim)
+        # a_x_y = self.dot_product(a_x_y)  # (bs, dim, dim)
+        # a_y_x = self.dot_product(a_y_x)  # (bs, dim, dim)
 
         return a_x_y, a_y_x
 
@@ -239,8 +243,8 @@ class DPTransformer(nn.Module):
             encoder_attention_mask=inputs_y["attention_mask"],
         )  # (bs, y_len, dim)
 
-        a_x_y = self.dot_product(a_x_y)  # (bs, dim, dim)
-        a_y_x = self.dot_product(a_y_x)  # (bs, dim, dim)
+        # a_x_y = self.dot_product(a_x_y)  # (bs, dim, dim)
+        # a_y_x = self.dot_product(a_y_x)  # (bs, dim, dim)
 
         return a_x_y, a_y_x
 
@@ -256,11 +260,13 @@ class LightningDPTransformer(LightningModule):
     ):
         super().__init__()
         self.model = DPTransformer(attn, dpsa, tokenizer, max_input_length)
-        self.linear = nn.Linear(config["hidden_dim"], 1)
+        self.dropout = nn.Dropout(config["dropout"])
+        self.inner_linear = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
+        self.outer_linear = nn.Linear(config["hidden_dim"], 1)
         self.lr = config["lr"]
         self.factor = config["lr_decay"]
         self.patience = config["lr_patience_scheduling"]
-        self.criterion = nn.CosineEmbeddingLoss()
+        self.criterion = nn.BCELoss()
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.lr)
@@ -279,10 +285,14 @@ class LightningDPTransformer(LightningModule):
         x, lengths_x = x[0].squeeze(1), x[1].squeeze(1)
         y, lengths_y = y[0].squeeze(1), y[1].squeeze(1)
         out_x_y, out_y_x = self.model(x, lengths_x, y, lengths_y)
-        out_x_y = self.linear(out_x_y).squeeze(-1)
-        out_y_x = self.linear(out_y_x).squeeze(-1)
-        loss = self.criterion(out_x_y, out_y_x, label)
-        
+        _, out_x_y = out_x_y
+        _, out_y_x = out_y_x
+        out = torch.cat([out_x_y, out_y_x], dim=-1)
+        out = self.inner_linear(out)
+        out = self.outer_linear(out).squeeze(-1)
+        out = torch.sigmoid(out)
+        loss = self.criterion(out, label)
+
         return loss
 
     def training_step(self, batch, batch_idx) -> torch.Tensor:
@@ -292,5 +302,5 @@ class LightningDPTransformer(LightningModule):
 
     def validation_step(self, batch, batch_idx) -> torch.Tensor:
         loss = self.compute_loss(batch)
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar=True)
         return loss
