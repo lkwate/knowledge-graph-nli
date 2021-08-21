@@ -266,7 +266,7 @@ class LightningDPTransformer(LightningModule):
         self.lr = config["lr"]
         self.factor = config["lr_decay"]
         self.patience = config["lr_patience_scheduling"]
-        self.criterion = nn.BCELoss()
+        self.criterion = nn.BCEWithLogitsLoss()
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.lr)
@@ -290,7 +290,6 @@ class LightningDPTransformer(LightningModule):
         out = torch.cat([out_x_y, out_y_x], dim=-1)
         out = self.inner_linear(out)
         out = self.outer_linear(out).squeeze(-1)
-        out = torch.sigmoid(out)
         loss = self.criterion(out, label)
 
         return loss

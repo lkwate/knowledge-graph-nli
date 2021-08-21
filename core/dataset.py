@@ -72,7 +72,7 @@ class NLIDataset(Dataset):
             label = item["label"]
             label = self.label_factory[label]
 
-            return output1, output2, label
+            return output1, output2, float(label)
     
     def get_instances(self, df):
         self.shuffle = False
@@ -107,7 +107,7 @@ class NLIDataset(Dataset):
                 logger.warning("Unknow label : %s"%label)
                 continue
             
-            yield self.to_tensor(output1), self.to_tensor(output2), self.label_factory[label]
+            yield self.to_tensor(output1), self.to_tensor(output2), float(self.label_factory[label])
 
 
 class NLIDataModule(LightningDataModule):
