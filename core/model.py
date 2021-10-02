@@ -5,7 +5,7 @@ from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from .utils import create_sinusoidal_embeddings, get_masks, BertTokenizer, to_tensor
+from .utils import create_sinusoidal_embeddings, get_masks, BertTokenizer, to_tensor, multi_acc, concat_batches
 from pytorch_lightning import LightningModule
 
 
@@ -128,7 +128,7 @@ class DPTransformer(nn.Module):
         positions = torch.arange(slen, out=positions).unsqueeze(0)  # (bs, slen)
         return positions
 
-    def forward(self, x, lengths_x, y, lengths_y):
+    def forward(self, x, lengths_x, y, lengths_y, positions = None):
         """
         input : `x`, `y` (list of bs sentences indices) : (bs, x_len) and (bs, y_len)
         output : dpsa(x, y), dpsa(y, x)
@@ -141,7 +141,6 @@ class DPTransformer(nn.Module):
         assert lengths_x.max().item() <= x_len and lengths_y.max().item() <= y_len
 
         # positions_id
-        positions = None
         if positions is None:
             positions_x = self.positions(x)  # (bs, x_len)
             positions_y = self.positions(y)  # (bs, y_len)
@@ -248,7 +247,6 @@ class DPTransformer(nn.Module):
 
         return a_x_y, a_y_x
 
-
 class LightningDPTransformer(LightningModule):
     def __init__(
         self,
@@ -291,15 +289,142 @@ class LightningDPTransformer(LightningModule):
         out = self.inner_linear(out)
         out = self.outer_linear(out).squeeze(-1)
         loss = self.criterion(out, label)
-
-        return loss
+        acc = multi_acc(y_pred = out, y_test = label)
+        return loss, acc
 
     def training_step(self, batch, batch_idx) -> torch.Tensor:
-        loss = self.compute_loss(batch)
+        loss, acc = self.compute_loss(batch)
         self.log("train_loss", loss)
+        self.log("train_acc", acc)
         return loss
 
     def validation_step(self, batch, batch_idx) -> torch.Tensor:
-        loss = self.compute_loss(batch)
+        loss, acc = self.compute_loss(batch)
         self.log("val_loss", loss, prog_bar=True)
+        self.log("val_acc", acc, prog_bar=True)
+        return loss
+    
+
+class LightningBertMNLI(LightningModule):
+    def __init__(
+        self,
+        attn: Encoder,
+        tokenizer: BertTokenizer,
+        config: Dict[str, Any],
+        max_input_length: int = 512,
+    ):
+        super().__init__()
+        self.attn = attn
+        self.tokenizer = tokenizer
+        self.pad_index = tokenizer.pad_token_id
+        self.max_input_length = max_input_length
+        
+        self.dropout = nn.Dropout(config["dropout"])
+        self.inner_linear = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.outer_linear = nn.Linear(config["hidden_dim"], 3)
+        self.lr = config["lr"]
+        self.factor = config["lr_decay"]
+        self.patience = config["lr_patience_scheduling"]
+        self.criterion = nn.CrossEntropyLoss()
+
+    def tokenize_and_cut(self, sentence):
+        tokens = self.tokenizer.encode(sentence)
+        return tokens
+
+    def positions(self, x):
+        """x : (bs, slen)"""
+        slen = x.size(1)
+        positions = x.new(slen).long()
+        positions = torch.arange(slen, out=positions).unsqueeze(0)  # (bs, slen)
+        return positions
+
+    def forward(self, x, lengths, segment_ids = None, positions = None):
+        """
+        input : `x` (list of bs sentences indices) : (bs, len)
+        """
+        bs = x.shape[0]
+        
+        len_ = x.size(1)
+        assert lengths.size(0) == bs
+        assert lengths.max().item() <= len_ 
+
+        # positions_id
+        if positions is None:
+            positions = self.positions(x)  # (bs, len)
+        else:
+            assert positions.size() == (bs, len_)
+
+        # token_type_ids
+        token_type_ids_x = segment_ids if segment_ids is not None else torch.zeros_like(x)
+
+        # generate masks (padding_mask and attention mask)
+        """
+        - mask : Mask to avoid performing attention on the padding token indices of the encoder input. 
+        This mask is used in the cross-attention if the model is configured as a decoder. 
+        Mask values selected in [0, 1]
+        - attn_mask : Mask to avoid performing attention on padding token indices. 
+        Mask values selected in [0, 1]
+        - 1 for tokens that are not masked and 0 for tokens that are masked.
+        """
+        mask, attn_mask = get_masks(
+            len, lengths, causal=False
+        )  # (bs, len), (bs, len)
+        mask, attn_mask = mask.int(), attn_mask.int()
+
+        x = self.attn(
+            input_ids=x,
+            attention_mask=attn_mask,
+            token_type_ids=token_type_ids_x,
+            position_ids=positions,
+            encoder_attention_mask=mask,
+        )  # (bs, len, dim)
+        
+        # [CLS] token
+        x = x[:,0] # (bs, dim)
+        
+        return x
+    
+    def configure_optimizers(self):
+        optimizer = optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, "min", factor=self.factor, patience=self.patience
+        )
+        output = {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }
+        return output
+
+    def compute_loss(self, batch):
+        b = False
+        if b :
+            (x, lengths, positions, segment_ids), label = batch
+            x, lengths = x[0].squeeze(1), x[1].squeeze(1)
+        else :
+            x, y, label = batch[0], batch[1], batch[2]
+            x1, len1 = x[0].squeeze(1), x[1].squeeze(1)
+            x2, len2 = y[0].squeeze(1), y[1].squeeze(1)
+            #x1, len1 = x[0], x[1]
+            #x2, len2 = y[0], y[1]
+            x, lengths, positions, segment_ids = concat_batches(x1, len1, x2, len2, self.tokenizer.cls_token_id, self.tokenizer.sep_token_id, self.tokenizer.pad_token_id)
+        
+        out = self(x, lengths, segment_ids, positions)
+        #out = self.__call__(x, lengths, segment_ids, positions)
+        out = self.inner_linear(out)
+        out = self.outer_linear(out).squeeze(-1)
+        loss = self.criterion(out, label.long())
+        acc = multi_acc(y_pred = out, y_test = label)
+        return loss, acc
+
+    def training_step(self, batch, batch_idx) -> torch.Tensor:
+        loss, acc = self.compute_loss(batch)
+        self.log("train_loss", loss)
+        self.log("train_acc", acc)
+        return loss
+
+    def validation_step(self, batch, batch_idx) -> torch.Tensor:
+        loss, acc = self.compute_loss(batch)
+        self.log("val_loss", loss, prog_bar=True)
+        self.log("val_acc", acc, prog_bar=True)
         return loss

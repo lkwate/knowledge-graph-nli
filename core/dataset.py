@@ -1,6 +1,6 @@
 """Dataset definition"""
 from torch.utils import data
-from core.utils import to_tensor
+from core.utils import concat_batches, to_tensor
 from typing import Dict, Union, List
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
@@ -16,7 +16,7 @@ class NLIDataset(Dataset):
         self,
         tokenizer: AutoTokenizer,
         config: Dict[str, Union[str, float, int]],
-        train: bool = True,
+        train: bool = True
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -26,14 +26,15 @@ class NLIDataset(Dataset):
         else:
             self.data = pd.read_csv(config["val_data_path"])
             self.n_samples = config["val_n_samples"]
-            
         self.n_samples = None if self.n_samples == -1 else self.n_samples
-            
-        self.data = self.data[self.data["label"] != "neutral"]
+        
+        self.bert_mnli = not config.get("dpsa", True)
+        if not self.bert_mnli :
+            self.data = self.data[self.data["label"] != "neutral"]
         self.max_length = config.get("max_length", 512)
         self.label_factory = {"entailment": 1, "contradiction": -1, "neutral": 0}
         
-        self.in_memory = True
+        self.in_memory = config.get("in_memory", True) 
         if self.in_memory :
             logger.info("Get instances ...")
             self.data = [inst for inst in self.get_instances(self.data)]
@@ -45,6 +46,13 @@ class NLIDataset(Dataset):
         except:
             print(sentence)
         tokens = tokens[: self.max_length]
+        return self.tokenizer.convert_tokens_to_ids(tokens)
+
+    def sentence_dont_cut(self, sentence):
+        try:
+            tokens = self.tokenizer.tokenize(sentence)
+        except:
+            print(sentence)
         return self.tokenizer.convert_tokens_to_ids(tokens)
 
     def to_tensor(self, sentences):
@@ -67,16 +75,19 @@ class NLIDataset(Dataset):
             return self.data[idx]
         else :
             item = self.data.iloc[idx]
-            output1 = self.to_tensor(item["sentence1"])
-            output2 = self.to_tensor(item["sentence2"])
             label = item["label"]
             label = self.label_factory[label]
-
-            return output1, output2, float(label)
-    
-    def get_instances(self, df):
-        self.shuffle = False
-        self.group_by_size = False
+            if not self.bert_mnli :
+                return self.to_tensor(item["sentence1"]), self.to_tensor(item["sentence2"]), float(label)
+            else :
+                x1, len1 = to_tensor(item["sentence1"], pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
+                x2, len2 = to_tensor(item["sentence2"], pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
+                output = concat_batches(x1, len1, x2, len2, self.tokenizer.cls_token_id, self.tokenizer.sep_token_id, self.tokenizer.pad_token_id)
+                return output, float(self.label_factory[label])
+            
+    def get_instances(self, df, shuffle = False, group_by_size = False):
+        self.shuffle = shuffle 
+        self.group_by_size = group_by_size
         self.text_columns = ["sentence1", "sentence2"]       
         rows = df.iterrows()
         if self.shuffle :
@@ -107,8 +118,28 @@ class NLIDataset(Dataset):
                 logger.warning("Unknow label : %s"%label)
                 continue
             
-            yield self.to_tensor(output1), self.to_tensor(output2), float(self.label_factory[label])
+            if not self.bert_mnli :
+                output1 = self.to_tensor(output1)
+                output2 = self.to_tensor(output2)
+                yield output1, output2, float(self.label_factory[label])
+            else :
+   
+                x1, len1 = to_tensor(output1, pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
+                x2, len2 = to_tensor(output2, pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
 
+                if len1 + 2 >= self.max_length : #or len1 + len2 + 3 >= self.max_length : 
+                    logger.warning("Sentences too long for entailment")
+                    self.weights[label] -= 1
+                    continue
+                
+                b = False
+                if b :
+                    output = concat_batches(x1, len1, x2, len2, self.tokenizer.cls_token_id, self.tokenizer.sep_token_id, self.tokenizer.pad_token_id)
+                    yield output, float(self.label_factory[label])
+                else :
+                    output1 = self.to_tensor(output1)
+                    output2 = self.to_tensor(output2)
+                    yield output1, output2, float(self.label_factory[label])
 
 class NLIDataModule(LightningDataModule):
     def __init__(

@@ -6,7 +6,7 @@ from core.model import Encoder, DpsaLayer, LightningDPTransformer
 import click
 from transformers import BertModel, BertTokenizer
 import pytorch_lightning as pl
-from core.model import LightningDPTransformer
+from core.model import LightningDPTransformer, LightningBertMNLI
 from pytorch_lightning.callbacks import EarlyStopping
 
 
@@ -27,6 +27,8 @@ from pytorch_lightning.callbacks import EarlyStopping
 @click.option("--train_n_samples", type=int, default=-1)
 @click.option("--val_n_samples", type=int, default=-1)
 @click.option("--dropout", type=float, default=0.1)
+@click.option("--dpsa", type=bool, default=True)
+@click.option('--in_memory', type=bool, default=True)
 def main(
     train_data_path: str,
     val_data_path: str,
@@ -43,7 +45,9 @@ def main(
     accumulate_grad_batches: int,
     train_n_samples: int,
     val_n_samples: int,
-    dropout: float
+    dropout: float,
+    dpsa : bool,
+    in_memory : bool,
 ):
     config = {
         "train_data_path": train_data_path,
@@ -57,12 +61,16 @@ def main(
         "hidden_dim": hidden_dim,
         "train_n_samples": train_n_samples,
         "val_n_samples": val_n_samples,
-        "dropout" : dropout
+        "dropout" : dropout,
+        "dpsa" : dpsa,
+        "in_memory" : in_memory
     }
-
+    
     # logger.info("")
     logger.info(f"model initialisation from {model_name}")
     attn_pretrained = BertModel.from_pretrained(model_name)
+    tokenizer = BertTokenizer.from_pretrained(model_name)
+    
     attn = Encoder(attn_pretrained.config)
     state_dict = {
         key: value
@@ -70,18 +78,20 @@ def main(
         if not key.startswith("pooler")
     }
     attn.load_state_dict(state_dict)
+        
+    if dpsa :
+        dpsa_pretrained = copy.deepcopy(attn_pretrained.encoder)
+        dpsa = DpsaLayer(dpsa_pretrained.config)
+        pooler_state_dict = attn_pretrained.pooler.state_dict()
+        pooler_state_dict["pooler.dense.weight"] = pooler_state_dict["dense.weight"]
+        pooler_state_dict["pooler.dense.bias"] = pooler_state_dict["dense.bias"]
+        del pooler_state_dict["dense.weight"], pooler_state_dict["dense.bias"]
+        dpsa.load_state_dict({**attn_pretrained.encoder.state_dict(), **pooler_state_dict})
 
-    dpsa_pretrained = copy.deepcopy(attn_pretrained.encoder)
-    dpsa = DpsaLayer(dpsa_pretrained.config)
-    pooler_state_dict = attn_pretrained.pooler.state_dict()
-    pooler_state_dict["pooler.dense.weight"] = pooler_state_dict["dense.weight"]
-    pooler_state_dict["pooler.dense.bias"] = pooler_state_dict["dense.bias"]
-    del pooler_state_dict["dense.weight"], pooler_state_dict["dense.bias"]
-    dpsa.load_state_dict({**attn_pretrained.encoder.state_dict(), **pooler_state_dict})
-
-    tokenizer = BertTokenizer.from_pretrained(model_name)
-    model = LightningDPTransformer(attn, dpsa, tokenizer, config, max_length)
-
+        model = LightningDPTransformer(attn, dpsa, tokenizer, config, max_length)
+    else : # Bert + classification layer
+        model = LightningBertMNLI(attn, tokenizer, config, max_length)
+        
     logger.info("Dataset...")
     data_module = NLIDataModule(tokenizer, config)
 
@@ -100,7 +110,6 @@ def main(
     config_trainer["callbacks"] = [early_stopping_callback]
     trainer = pl.Trainer(**config_trainer)
     trainer.fit(model, data_module)
-
 
 if __name__ == "__main__":
     main()
