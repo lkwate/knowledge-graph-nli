@@ -367,7 +367,7 @@ class LightningBertMNLI(LightningModule):
         - 1 for tokens that are not masked and 0 for tokens that are masked.
         """
         mask, attn_mask = get_masks(
-            len, lengths, causal=False
+            len_, lengths, causal=False
         )  # (bs, len), (bs, len)
         mask, attn_mask = mask.int(), attn_mask.int()
 

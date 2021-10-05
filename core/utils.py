@@ -98,7 +98,7 @@ def multi_acc(y_pred, y_test):
     if y_pred.dim() == 2 :
         y_pred = torch.log_softmax(y_pred, dim=1).argmax(dim=1)
     acc = (y_pred == y_test).sum().float() / float(y_test.size(0))
-    return acc
+    return acc.item()
 
 def concat_batches(x1, len1, x2, len2, cls_token_id, sep_token_id, pad_token_id):
     """
