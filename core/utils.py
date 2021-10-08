@@ -102,24 +102,26 @@ def multi_acc(y_pred, y_test):
 
 def concat_batches(x1, len1, x2, len2, cls_token_id, sep_token_id, pad_token_id):
     """
-    Concat batches with different languages.
+    Concat batches.
+    x1, len1 : premise 
+    x2, len2 : hypothesis
     """
     lengths = len1 + len2 + 3 # [CLS] premise [SEP] hypothesis [SEP]
     slen, bs = lengths.max().item(), lengths.size(0)
 
-    x = x1.new(bs,  slen).fill_(pad_token_id)
-    x[:,0].fill_(cls_token_id)
+    x = x1.new(bs,  slen).fill_(pad_token_id) 
+    x[:,0].fill_(cls_token_id) # [CLS] 
 
     l = len1.max().item()
-    x[:,1:l+1].copy_(x1[:,:l])
+    x[:,1:l+1].copy_(x1[:,:l]) # [CLS] premise 
 
     segment_ids = torch.LongTensor(bs, slen).fill_(pad_token_id)
     for i in range(bs):
         l1, l2 = len1[i], len2[i]
         l3 = l1+l2+2
-        x[i,l1+1] = sep_token_id
-        x[i,l1+2:l3].copy_(x2[i,:l2])
-        x[i,l3] = sep_token_id
+        x[i,l1+1] = sep_token_id # [CLS] premise [SEP] 
+        x[i,l1+2:l3].copy_(x2[i,:l2]) # [CLS] premise [SEP] hypothesis
+        x[i,l3] = sep_token_id # [CLS] premise [SEP] hypothesis [SEP]
 
         #segment_ids[i,:] = torch.tensor([0] * (l1 + 2) + [1] * (l2 + 1) + [0] * (slen - l3 - 1))  # sentence 0 & sentence 1 & pad_index
         segment_ids[i,:l3+1] = torch.tensor([0] * (l1 + 2) + [1] * (l2 + 1)) # sentence 0 & sentence 1 

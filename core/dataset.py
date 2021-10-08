@@ -1,4 +1,5 @@
 """Dataset definition"""
+from copy import copy, deepcopy
 from torch.utils import data
 from core.utils import concat_batches, to_tensor
 from typing import Dict, Union, List
@@ -9,6 +10,8 @@ from transformers import AutoTokenizer
 import pandas as pd
 from loguru import logger
 import random
+
+concat_before_return = False
 
 
 class NLIDataset(Dataset):
@@ -31,8 +34,11 @@ class NLIDataset(Dataset):
         self.bert_mnli = not config.get("dpsa", True)
         if not self.bert_mnli :
             self.data = self.data[self.data["label"] != "neutral"]
+            self.label_factory = {"entailment": 1, "contradiction": -1, "neutral": 0}
+        else :
+            self.label_factory = {"entailment": 0, "contradiction": 1, "neutral": 2}
+            
         self.max_length = config.get("max_length", 512)
-        self.label_factory = {"entailment": 1, "contradiction": -1, "neutral": 0}
         
         self.in_memory = config.get("in_memory", True) 
         if self.in_memory :
@@ -123,7 +129,6 @@ class NLIDataset(Dataset):
                 output2 = self.to_tensor(output2)
                 yield output1, output2, float(self.label_factory[label])
             else :
-   
                 x1, len1 = to_tensor(output1, pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
                 x2, len2 = to_tensor(output2, pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
 
@@ -132,8 +137,7 @@ class NLIDataset(Dataset):
                     self.weights[label] -= 1
                     continue
                 
-                b = False
-                if b :
+                if concat_before_return :
                     output = concat_batches(x1, len1, x2, len2, self.tokenizer.cls_token_id, self.tokenizer.sep_token_id, self.tokenizer.pad_token_id)
                     yield output, float(self.label_factory[label])
                 else :
@@ -165,10 +169,17 @@ class NLIDataModule(LightningDataModule):
                 "val_data_path not found in the dataset configurations dictionary"
             )
 
-        logger.info("Train dataset...")
-        self.train_dataset = NLIDataset(tokenizer, config, train=True)
-        logger.info("Valid dataset...")
-        self.val_dataset = NLIDataset(tokenizer, config, train=False)
+        if not config["eval_only"] :
+            logger.info("Train dataset...")
+            self.train_dataset = NLIDataset(tokenizer, config, train=True)
+            logger.info("Valid dataset...")
+            self.val_dataset = NLIDataset(tokenizer, config, train=False)
+        if config.get("test_data_path", "") :
+            logger.info("Test dataset...")
+            config_copy = deepcopy(config)
+            config_copy["val_data_path"] = config["test_data_path"]
+            config_copy["val_n_samples"] = config["test_n_samples"]
+            self.test_dataset = NLIDataset(tokenizer, config_copy, train=False)
         self.num_workers = config.get("num_workers", 2)
         self.batch_size = config["batch_size"]
 
@@ -185,4 +196,9 @@ class NLIDataModule(LightningDataModule):
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return DataLoader(
             self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers
+        )
+        
+    def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
+        return DataLoader(
+            self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers
         )

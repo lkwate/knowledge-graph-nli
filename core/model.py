@@ -5,7 +5,9 @@ from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from .utils import create_sinusoidal_embeddings, get_masks, BertTokenizer, to_tensor, multi_acc, concat_batches
+from .utils import BertTokenizer
+from .utils import create_sinusoidal_embeddings, get_masks, to_tensor, multi_acc, concat_batches
+from .dataset import concat_before_return
 from pytorch_lightning import LightningModule
 
 
@@ -304,6 +306,12 @@ class LightningDPTransformer(LightningModule):
         self.log("val_acc", acc, prog_bar=True)
         return loss
     
+    def test_step(self, batch, batch_idx) -> torch.Tensor:
+        loss, acc = self.compute_loss(batch)
+        self.log("test_loss", loss, prog_bar=True)
+        self.log("test_acc", acc, prog_bar=True)
+        return loss
+    
 
 class LightningBertMNLI(LightningModule):
     def __init__(
@@ -397,8 +405,7 @@ class LightningBertMNLI(LightningModule):
         return output
 
     def compute_loss(self, batch):
-        b = False
-        if b :
+        if concat_before_return :
             (x, lengths, positions, segment_ids), label = batch
             x, lengths = x[0].squeeze(1), x[1].squeeze(1)
         else :
@@ -419,12 +426,18 @@ class LightningBertMNLI(LightningModule):
 
     def training_step(self, batch, batch_idx) -> torch.Tensor:
         loss, acc = self.compute_loss(batch)
-        self.log("train_loss", loss)
-        self.log("train_acc", acc)
+        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_acc", acc, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx) -> torch.Tensor:
         loss, acc = self.compute_loss(batch)
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_acc", acc, prog_bar=True)
+        return loss
+    
+    def test_step(self, batch, batch_idx) -> torch.Tensor:
+        loss, acc = self.compute_loss(batch)
+        self.log("test_loss", loss, prog_bar=True)
+        self.log("test_acc", acc, prog_bar=True)
         return loss
