@@ -184,7 +184,8 @@ class AttrDict(dict):
 def get_data_path(config, data_file, n_samples) :
     filename, _ = os.path.splitext(path_leaf(data_file))
     params = AttrDict(config)
-    f = '%s_%s_%s_%s_%s'%(params.batch_size, params.max_length, params.in_memory, n_samples, params.dpsa)
+    #f = '%s_%s_%s_%s_%s'%(params.batch_size, params.max_length, params.in_memory, n_samples, params.dpsa)
+    f = '%s_%s_%s_%s'%(params.max_length, params.in_memory, n_samples, params.dpsa)
     filename = "%s_%s"%(filename, hash_var(f))
     data_path = os.path.join(params.dump_path, '%s.pth'%filename)
     return data_path
