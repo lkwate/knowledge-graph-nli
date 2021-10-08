@@ -1,12 +1,12 @@
 #!/bin/bash
 
-dump_path=/content
-data_path=/content
+dump_path="../dump_path"
+data_path="../nli_dataset/Multi-genre-nli"
 
 train_data=$data_path/multinli_1.0_train.csv
 dev_data=$data_path/multinli_1.0_dev_matched.csv
 test_data=$data_path/multinli_1.0_dev_mismatched.csv
-batch_size=16
+batch_size=64
 reload_checkpoint=None
 
 python3 trainer.py \
@@ -36,5 +36,6 @@ python3 trainer.py \
 		--exp_id text_entailment \
 		--reload_checkpoint $reload_checkpoint \
 		--eval_only False \
-		--auto_scale_batch_size None \
-		--auto_lr_find False
+		--auto_scale_batch_size True \
+		--auto_lr_find False \
+		--deterministic False

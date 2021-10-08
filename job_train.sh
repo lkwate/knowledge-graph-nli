@@ -7,7 +7,7 @@
 ###########cluster information above this line
 
 ###load environment 
-module load anaconda/3
+#module load anaconda/3
 module load cuda/10.1
 source ../dpsa/bin/activate
 

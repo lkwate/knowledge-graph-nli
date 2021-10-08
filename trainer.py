@@ -41,6 +41,7 @@ from pytorch_lightning.callbacks import Callback, EarlyStopping, ModelCheckpoint
 @click.option("--auto_scale_batch_size", type=str, default=None, # "binsearch" 
             help="Automatically tries to find the largest batch size that fits into memory, before any training")
 @click.option("--auto_lr_find", type=bool, default=False, help="runs a learning rate finder algorithm")
+@click.option("--deterministic", type=bool, default=False, help='ensures reproducibility')
 def main(
     train_data_path: str,
     val_data_path: str,
@@ -69,7 +70,8 @@ def main(
     reload_checkpoint : str,
     eval_only : bool,
     auto_scale_batch_size : str,
-    auto_lr_find : bool
+    auto_lr_find : bool,
+    deterministic : bool
 ):
     config = {
         "train_data_path": train_data_path,
@@ -88,10 +90,19 @@ def main(
         "dropout" : dropout,
         "dpsa" : dpsa,
         "in_memory" : in_memory,
-        "eval_only" : eval_only 
+        "eval_only" : eval_only,
+        "dump_path" : dump_path
     }
     
+    resume_from_checkpoint = reload_checkpoint if os.path.isfile(reload_checkpoint) else None
+    assert not eval_only or os.path.isfile(resume_from_checkpoint if resume_from_checkpoint else "")
     pl.seed_everything(random_seed, workers=True)
+    root_dir = os.path.join(dump_path, exp_id)
+    if not os.path.isdir(dump_path) :
+        os.mkdir(dump_path)
+    if not os.path.isdir(root_dir) :
+        os.mkdir(root_dir)
+
     # logger.info("")
     logger.info(f"model initialisation from {model_name}")
     attn_pretrained = BertModel.from_pretrained(model_name)
@@ -122,9 +133,6 @@ def main(
     data_module = NLIDataModule(tokenizer, config)
 
     logger.info("model initialisation completed")
-    root_dir = os.path.join(dump_path, exp_id)
-    if not os.path.isdir(root_dir) :
-        os.mkdir(root_dir)
         
     config_trainer = {
         "max_epochs": max_epochs,
@@ -133,13 +141,13 @@ def main(
         
         "default_root_dir" : root_dir,
         #"log_every_n_steps" : max(len(data_module.train_dataset) // batch_size, 0),
-        "resume_from_checkpoint" : reload_checkpoint if os.path.isfile(reload_checkpoint) else None,
+        "resume_from_checkpoint" : resume_from_checkpoint,
         #"weights_save_path" : dump_path,
         "auto_scale_batch_size":auto_scale_batch_size, # None
         "auto_select_gpus" : True,
         "auto_lr_find":auto_lr_find,
         "benchmark" : False,
-        "deterministic" : True
+        "deterministic" : deterministic
     }
     if not eval_only :
         config_trainer["log_every_n_steps"] = max(len(data_module.train_dataset) // batch_size, 0)
@@ -152,6 +160,7 @@ def main(
         monitor=validation_metrics, patience=patience_early_stopping, verbose=False, strict=True,
         mode = mode
     )
+    
     checkpoint_callback = ModelCheckpoint(
         monitor=validation_metrics,
         dirpath=root_dir,
@@ -165,10 +174,12 @@ def main(
     
     if not eval_only :
         trainer.fit(model, data_module)
-        #trainer.validate(dataloaders=data_module.test_dataloader())
         trainer.test(dataloaders=data_module.test_dataloader())
     else :
-        #trainer.validate(model, dataloaders=data_module.test_dataloader())
+        if dpsa :
+            model = LightningDPTransformer.load_from_checkpoint(resume_from_checkpoint, attn = attn, dpsa = dpsa, tokenizer = tokenizer, config = config, max_input_length = max_length)
+        else :
+            model = LightningBertMNLI.load_from_checkpoint(resume_from_checkpoint, attn = attn, tokenizer = tokenizer, config = config, max_input_length = max_length)
         trainer.test(model, dataloaders=data_module.test_dataloader())
         
 class PrintCallback(Callback):

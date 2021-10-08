@@ -1,7 +1,7 @@
 """Dataset definition"""
-from copy import copy, deepcopy
+import tqdm
 from torch.utils import data
-from core.utils import concat_batches, to_tensor
+from core.utils import concat_batches, to_tensor, get_data_path
 from typing import Dict, Union, List
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
@@ -10,8 +10,11 @@ from transformers import AutoTokenizer
 import pandas as pd
 from loguru import logger
 import random
+import os
 
 concat_before_return = False
+dtypes = {'train' : 'train_data_path', 'valid' : 'val_data_path', 'test': 'test_data_path'}
+data_n_samples = {'train' : 'train_n_samples', 'valid' : 'val_n_samples', 'test' : 'test_n_samples'}
 
 
 class NLIDataset(Dataset):
@@ -19,17 +22,31 @@ class NLIDataset(Dataset):
         self,
         tokenizer: AutoTokenizer,
         config: Dict[str, Union[str, float, int]],
-        train: bool = True
+        split : str,
     ):
         super().__init__()
+        assert split in dtypes.keys()
+        data_file = config[dtypes[split]]
+        n_sample = config[data_n_samples[split]]
+
+        # For large data, it is necessary to process them only once
+        data_path = get_data_path(config, data_file, n_sample)
+        if os.path.isfile(data_path) :
+            logger.info("Loading data from %s ..."%data_path)
+            loaded_self = torch.load(data_path)
+            for attr_name in dir(loaded_self) :
+                try :
+                    setattr(self, attr_name, getattr(loaded_self, attr_name))
+                except AttributeError :
+                    pass
+            return
+
         self.tokenizer = tokenizer
-        if train:
-            self.data = pd.read_csv(config["train_data_path"])
-            self.n_samples = config["train_n_samples"]
-        else:
-            self.data = pd.read_csv(config["val_data_path"])
-            self.n_samples = config["val_n_samples"]
-        self.n_samples = None if self.n_samples == -1 else self.n_samples
+
+        logger.info("Loading data from %s ..."%data_file)
+        self.data = pd.read_csv(data_file)
+        logger.info("Size = %s"%len(self.data))
+        self.n_samples = None if n_sample == -1 else n_sample
         
         self.bert_mnli = not config.get("dpsa", True)
         if not self.bert_mnli :
@@ -44,7 +61,15 @@ class NLIDataset(Dataset):
         if self.in_memory :
             logger.info("Get instances ...")
             self.data = [inst for inst in self.get_instances(self.data)]
+            logger.info("New size = %s"%len(self.data))
+            if self.warn_exemple :
+                for k, v in self.warn_exemple.items() :
+                    logger.info("%s : %s"%(k, v))
             logger.info("Weigths %s"%str(self.weights))
+
+        # For large data, it is necessary to process them only once
+        logger.info("Saving data to %s ..."%data_path)
+        torch.save(self, data_path)
 
     def sentence_and_cut(self, sentence):
         try:
@@ -88,8 +113,13 @@ class NLIDataset(Dataset):
             else :
                 x1, len1 = to_tensor(item["sentence1"], pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
                 x2, len2 = to_tensor(item["sentence2"], pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
-                output = concat_batches(x1, len1, x2, len2, self.tokenizer.cls_token_id, self.tokenizer.sep_token_id, self.tokenizer.pad_token_id)
-                return output, float(self.label_factory[label])
+                if concat_before_return :
+                    output = concat_batches(x1, len1, x2, len2, self.tokenizer.cls_token_id, self.tokenizer.sep_token_id, self.tokenizer.pad_token_id)
+                    return output, float(self.label_factory[label])
+                else :
+                    output1 = self.to_tensor(item["sentence1"])
+                    output2 = self.to_tensor(item["sentence2"])
+                    return output1, output2, float(self.label_factory[label])
             
     def get_instances(self, df, shuffle = False, group_by_size = False):
         self.shuffle = shuffle 
@@ -107,21 +137,25 @@ class NLIDataset(Dataset):
             rows = sorted(rows, key = sorted_criterion, reverse=False)
         
         self.weights = {k : 0 for k in self.label_factory.keys()}
-        
-        for row in rows : 
+        self.warn_exemple = {}
+        #for row in rows : 
+        for row in tqdm.tqdm(rows, desc="Get instances ...") :
             item = row[1]
             
             output1, output2 = item[self.text_columns[0]], item[self.text_columns[1]]
             # check NaN
             if (output1 != output1) or (output2 != output2) :
-                logger.warning("NaN detected")
+                #logger.warning("NaN detected")
+                self.warn_exemple["NaN detected"] = self.warn_exemple.get("NaN detected", 0) + 1
                 continue
             
             label = item["label"]
             try :
                 self.weights[label] += 1
             except KeyError :
-                logger.warning("Unknow label : %s"%label)
+                #logger.warning("Unknow label : %s"%label)
+                k = "Unknow label : %s"%label
+                self.warn_exemple[k] = self.warn_exemple.get(k, 0) + 1
                 continue
             
             if not self.bert_mnli :
@@ -133,7 +167,10 @@ class NLIDataset(Dataset):
                 x2, len2 = to_tensor(output2, pad_index=self.tokenizer.pad_token_id, tokenize=self.sentence_dont_cut, batch_first=True)
 
                 if len1 + 2 >= self.max_length : #or len1 + len2 + 3 >= self.max_length : 
-                    logger.warning("Sentences too long for entailment")
+                    #logger.warning("Sentences too long for entailment")
+                    #k = "Sentences too long for entailment : %s <<-->> %s"%(output1, output2)
+                    k = "Sentences too long for entailment"
+                    self.warn_exemple[k] = self.warn_exemple.get(k, 0) + 1
                     self.weights[label] -= 1
                     continue
                 
@@ -171,15 +208,13 @@ class NLIDataModule(LightningDataModule):
 
         if not config["eval_only"] :
             logger.info("Train dataset...")
-            self.train_dataset = NLIDataset(tokenizer, config, train=True)
+            self.train_dataset = NLIDataset(tokenizer, config, split='train')
             logger.info("Valid dataset...")
-            self.val_dataset = NLIDataset(tokenizer, config, train=False)
-        if config.get("test_data_path", "") :
-            logger.info("Test dataset...")
-            config_copy = deepcopy(config)
-            config_copy["val_data_path"] = config["test_data_path"]
-            config_copy["val_n_samples"] = config["test_n_samples"]
-            self.test_dataset = NLIDataset(tokenizer, config_copy, train=False)
+            self.val_dataset = NLIDataset(tokenizer, config, split='valid')
+        
+        logger.info("Test dataset...")    
+        self.test_dataset = NLIDataset(tokenizer, config, split='test')
+
         self.num_workers = config.get("num_workers", 2)
         self.batch_size = config["batch_size"]
 
