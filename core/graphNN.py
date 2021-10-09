@@ -72,7 +72,6 @@ class GraphModel(nn.Module):
         self.model_name = config.get("model_name", "bert-base-uncased")
 
         self.bert = AutoModel.from_pretrained(self.model_name)
-        self.dropout = nn.Dropout(self.dropout)
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.pos_embedding = nn.Embedding(self.pos_num, self.pos_dim)
         self.edge_embedding = nn.Embedding(self.edge_num, self.edge_dim)
@@ -92,6 +91,7 @@ class GraphModel(nn.Module):
 
         self.graph_merging = nn.Linear(2 * self.transformer_conv_dim, 768)
         self.outer_projection = nn.Linear(768 * 2, self.num_class)
+        self.dropout = nn.Dropout(self.dropout)
 
     def _forward_graph_transformer(self, graph_model, graph_input):
         edge_attr = graph_input["edge_attr"]
@@ -108,6 +108,7 @@ class GraphModel(nn.Module):
             transformer_input, graph_input1, graph_input2
         )
         out_bert = self.bert(**transformer_input)["pooler_output"]
+        out_bert = self.dropout(out_bert)
         out_graph1 = self._forward_graph_transformer(self.graph_transformer, graph_input1)
         out_graph2 = self._forward_graph_transformer(self.graph_transformer, graph_input2)
         out_graph = torch.cat([out_graph1, out_graph2], dim=-1)
