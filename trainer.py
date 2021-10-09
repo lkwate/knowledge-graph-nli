@@ -43,7 +43,7 @@ def main(
     accumulate_grad_batches: int,
     train_n_samples: int,
     val_n_samples: int,
-    dropout: float
+    dropout: float,
 ):
     config = {
         "train_data_path": train_data_path,
@@ -57,7 +57,7 @@ def main(
         "hidden_dim": hidden_dim,
         "train_n_samples": train_n_samples,
         "val_n_samples": val_n_samples,
-        "dropout" : dropout
+        "dropout": dropout,
     }
 
     # logger.info("")
