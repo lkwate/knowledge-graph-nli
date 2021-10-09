@@ -72,6 +72,7 @@ class GraphModel(nn.Module):
         self.model_name = config.get("model_name", "bert-base-uncased")
 
         self.bert = AutoModel.from_pretrained(self.model_name)
+        self.dropout = nn.Dropout(self.dropout)
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.pos_embedding = nn.Embedding(self.pos_num, self.pos_dim)
         self.edge_embedding = nn.Embedding(self.edge_num, self.edge_dim)
@@ -112,6 +113,7 @@ class GraphModel(nn.Module):
         out_graph = torch.cat([out_graph1, out_graph2], dim=-1)
         out_graph = self.graph_merging(out_graph).unsqueeze(0)
         out = torch.cat([out_bert, out_graph], dim=-1)
+        out = self.dropout(out)
         out = self.outer_projection(out)
         return out
 
@@ -128,7 +130,7 @@ class GraphModel(nn.Module):
             sub_tokens = self.tokenizer(
                 token, add_special_tokens=False, return_tensors="pt"
             )["input_ids"]
-            sub_tokens = sub_tokens.type_as(dummy_tensor)
+            sub_tokens = sub_tokens.type_as(dummy_tensor).long()
             sub_embedding = self.bert.embeddings.word_embeddings(sub_tokens)[0]
             sub_embedding = torch.max(sub_embedding, dim=0).values
             embeddings.append(sub_embedding)
@@ -243,7 +245,7 @@ class GraphLightningModule(pl.LightningModule):
 @click.argument("train_data_path", type=click.Path(exists=True))
 @click.argument("val_data_path", type=click.Path(exists=True))
 @click.argument("batch_size", type=int)
-@click.option("--model_name", type=str, default="bert-base-uncased")
+@click.option("--model_name", type=str, default="roberta-base")
 @click.option("--lr", type=float, default=1e-5)
 @click.option("--lr_decay", type=float, default=0.8)
 @click.option("--lr_patience_scheduling", type=int, default=3)
