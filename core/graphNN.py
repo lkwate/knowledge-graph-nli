@@ -121,13 +121,14 @@ class GraphModel(nn.Module):
         loss = criterion(out, label.long())
         return loss
 
-    def _sub_embedding(self, tokens: List[Tuple[str]]):
+    def _sub_embedding(self, tokens: List[Tuple[str]], dummy_tensor: torch.Tensor):
         tokens = map(lambda item: item[0], tokens)
         embeddings = []
         for token in tokens:
             sub_tokens = self.tokenizer(
                 token, add_special_tokens=False, return_tensors="pt"
             )["input_ids"]
+            sub_tokens = sub_tokens.type_as(dummy_tensor)
             sub_embedding = self.bert.embeddings.word_embeddings(sub_tokens)[0]
             sub_embedding = torch.max(sub_embedding, dim=0).values
             embeddings.append(sub_embedding)
@@ -145,12 +146,13 @@ class GraphModel(nn.Module):
 
         graph_input1["edge_attr"] = self.edge_embedding(graph_input1["edge_attr"])
         graph_input2["edge_attr"] = self.edge_embedding(graph_input2["edge_attr"])
+        dummy_tensor = graph_input1["edge_attr"]
         graph_input1["x"] = torch.cat(
-            [self._sub_embedding(tokens1), self.pos_embedding(graph_input1["pos_tag"])],
+            [self._sub_embedding(tokens1, dummy_tensor), self.pos_embedding(graph_input1["pos_tag"])],
             dim=-1,
         )
         graph_input2["x"] = torch.cat(
-            [self._sub_embedding(tokens2), self.pos_embedding(graph_input2["pos_tag"])],
+            [self._sub_embedding(tokens2, dummy_tensor), self.pos_embedding(graph_input2["pos_tag"])],
             dim=-1,
         )
         del graph_input1["pos_tag"], graph_input2["pos_tag"]
