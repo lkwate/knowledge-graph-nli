@@ -50,7 +50,7 @@ class Encoder(BertModel):
 
 
 class DpsaLayer(BertEncoder):
-    def __init__(self, config : BertConfig):
+    def __init__(self, config: BertConfig):
         super(DpsaLayer, self).__init__(config)
         self.pooler = BertPooler(config)
 
@@ -65,25 +65,26 @@ class DpsaLayer(BertEncoder):
         use_cache=None,
         output_attentions=False,
         output_hidden_states=False,
-        #return_dict=True,
-    ) : 
-        #bs, seq_len, hidden_size = hidden_states.shape
-        #x = super()(
+        # return_dict=True,
+    ):
+        # bs, seq_len, hidden_size = hidden_states.shape
+        # x = super()(
         x = super().forward(
-            hidden_states = hidden_states,
-            attention_mask = attention_mask,
-            head_mask = head_mask,
-            encoder_hidden_states = encoder_hidden_states,
-            encoder_attention_mask = encoder_attention_mask,
-            past_key_values = past_key_values,
-            use_cache = use_cache,
-            output_attentions = output_attentions,
-            output_hidden_states = output_hidden_states,
-            return_dict=True
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=True,
         )
         sequence_output = x["last_hidden_state"]
         pooler_output = self.pooler(sequence_output)
         return sequence_output, pooler_output
+
 
 class DPTransformer(nn.Module):
     def __init__(
