@@ -25,3 +25,5 @@ sentence1, sentence2 = "A self-care serves to breakdown human being limits", "th
 scores = model.score(sentence1, sentence2)
 print(scores)
 ```
+
+[Universal Dependencies](https://universaldependencies.org/#language-u)
