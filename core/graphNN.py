@@ -380,7 +380,6 @@ def train(
     }
 
     torch.manual_seed(seed)
-    torch.use_deterministic_algorithms(True)
     logger.info("Model initialisation...")
     model = GraphLightningModule(config)
 
