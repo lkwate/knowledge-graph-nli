@@ -317,6 +317,7 @@ class GraphLightningModule(pl.LightningModule):
 @click.argument("val_data_path", type=click.Path(exists=True))
 @click.argument("test_data_path", type=click.Path(exists=True))
 @click.argument("batch_size", type=int)
+@click.option("--checkpoint_path", type=click.Path(exists=True))
 @click.option("--model_name", type=str, default="roberta-base")
 @click.option("--lr", type=float, default=1e-5)
 @click.option("--lr_decay", type=float, default=0.8)
@@ -338,6 +339,7 @@ def train(
     val_data_path: str,
     test_data_path: str,
     batch_size: int,
+    checkpoint_path: str,
     model_name: str,
     lr: float,
     lr_decay: float,
@@ -381,7 +383,14 @@ def train(
 
     torch.manual_seed(seed)
     logger.info("Model initialisation...")
-    model = GraphLightningModule(config)
+    if checkpoint_path:
+        logger.info("Load the model from checkpoint")
+        model = GraphLightningModule.load_from_checkpoint(
+            checkpoint_path=checkpoint_path, config=config
+        )
+    else:
+        logger.info("Load the model from huggingface's pretrained")
+        model = GraphLightningModule(config)
 
     logger.info("Data Module initialisation...")
     datamodule = GraphLightningDataModule(config)
