@@ -42,6 +42,7 @@ class GraphDataset(Dataset):
             logger.info("Testing data loading")
             self.data = pd.read_csv(config["test_data_path"])
 
+        self.add_global_token = config["add_global_token"]
         self.label_factory = {"neutral": 0, "entailment": 1, "contradiction": 2}
 
     def __len__(self) -> int:
@@ -59,8 +60,8 @@ class GraphDataset(Dataset):
         )
         label = float(self.label_factory[label])
 
-        graph_sentence1 = dependency_tree(sentence1)
-        graph_sentence2 = dependency_tree(sentence2)
+        graph_sentence1 = dependency_tree(sentence1, self.tokenizer, add_global_token=self.add_global_token)
+        graph_sentence2 = dependency_tree(sentence2, self.tokenizer, add_global_token=self.add_global_token)
         input_sentence = self.tokenizer(sentence1, sentence2, return_tensors="pt")
 
         return graph_sentence1, graph_sentence2, input_sentence, label
@@ -83,6 +84,7 @@ class GraphModel(nn.Module):
         self.num_class = config.get("num_class", 3)
         self.transformer_conv_dim = self.pos_dim + 768
         self.model_name = config.get("model_name", "bert-base-uncased")
+        self.add_global_token = config["add_global_token"]
 
         self.bert = AutoModel.from_pretrained(self.model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
@@ -113,7 +115,10 @@ class GraphModel(nn.Module):
         for layer in graph_model:
             x = layer(x=x, edge_index=edge_index, edge_attr=edge_attr)
 
-        x = torch.mean(x, dim=-2)
+        if self.add_global_token:
+            x = x[-1, :]
+        else:
+            x = torch.mean(x, dim=-2)
         return x
 
     def forward(self, graph_input1, graph_input2, transformer_input):
@@ -334,6 +339,7 @@ class GraphLightningModule(pl.LightningModule):
 @click.option("--num_class", type=int, default=3)
 @click.option("--seed", type=int, default=42)
 @click.option("--save_top_k", type=int, default=5)
+@click.option("--add_global_token", type=str, default="true")
 def train(
     train_data_path: str,
     val_data_path: str,
@@ -356,6 +362,7 @@ def train(
     num_transformer_conv: int,
     seed: int,
     save_top_k: int,
+    add_global_token: str
 ):
     config = {
         "train_data_path": train_data_path,
@@ -379,12 +386,15 @@ def train(
         "num_class": num_class,
         "num_transformer_conv": num_transformer_conv,
         "seed": seed,
+        "add_global_token": add_global_token == "true"
     }
 
     torch.manual_seed(seed)
     logger.info("Model initialisation...")
+    if config["add_global_token"]:
+        logger.info("CLS global token used in Graph Transformer")
     if checkpoint_path:
-        logger.info("Load the model from checkpoint")
+        logger.info(f"Load the model from checkpoint ...{checkpoint_path[-50:]}")
         model = GraphLightningModule.load_from_checkpoint(
             checkpoint_path=checkpoint_path, config=config
         )
