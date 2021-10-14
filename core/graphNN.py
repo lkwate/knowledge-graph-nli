@@ -1,10 +1,11 @@
 import torch.nn as nn
 import torch.optim as optim
+import torch_optimizer
 import torch_geometric.nn as geo_nn
 import pytorch_lightning as pl
 import torch
 from .utils import *
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer, AutoConfig
 from torch.utils.data import Dataset, DataLoader
 from typing import Any, Dict, Tuple, Union, List
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
@@ -16,6 +17,7 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 DATASET_TYPE = {"train", "val", "test"}
+OPTIMIZER_DIC = {"Adam": optim.Adam, "Lamb": torch_optimizer.Lamb}
 
 
 class GraphDataset(Dataset):
@@ -60,8 +62,12 @@ class GraphDataset(Dataset):
         )
         label = float(self.label_factory[label])
 
-        graph_sentence1 = dependency_tree(sentence1, self.tokenizer, add_global_token=self.add_global_token)
-        graph_sentence2 = dependency_tree(sentence2, self.tokenizer, add_global_token=self.add_global_token)
+        graph_sentence1 = dependency_tree(
+            sentence1, self.tokenizer, add_global_token=self.add_global_token
+        )
+        graph_sentence2 = dependency_tree(
+            sentence2, self.tokenizer, add_global_token=self.add_global_token
+        )
         input_sentence = self.tokenizer(sentence1, sentence2, return_tensors="pt")
 
         return graph_sentence1, graph_sentence2, input_sentence, label
@@ -74,38 +80,38 @@ class GraphModel(nn.Module):
     def __init__(self, config: Dict[str, Any]):
         super(GraphModel, self).__init__()
         self.pos_num = config["pos_num"]
-        self.pos_dim = config["pos_dim"]
         self.edge_num = config["edge_num"]
-        self.edge_dim = config["edge_dim"]
         self.dropout = config.get("dropout", 0.1)
-        self.embedding_dim = config.get("embedding_dim", 768)
-        self.num_transformer_conv_head = config.get("num_transformer_conv_head", 4)
-        self.num_transformer_conv = config.get("num_transformer_conv", 4)
+        self.embedding_dim = config["embedding_dim"]
+        self.num_transformer_conv_head = config.get("num_transformer_conv_head", 12)
+        self.num_transformer_conv = config.get("num_transformer_conv", 12)
         self.num_class = config.get("num_class", 3)
-        self.transformer_conv_dim = self.pos_dim + 768
         self.model_name = config.get("model_name", "bert-base-uncased")
         self.add_global_token = config["add_global_token"]
+        self.hidden_size = config["hidden_size"]
 
         self.bert = AutoModel.from_pretrained(self.model_name)
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-        self.pos_embedding = nn.Embedding(self.pos_num, self.pos_dim)
-        self.edge_embedding = nn.Embedding(self.edge_num, self.edge_dim)
+        self.pos_embedding = nn.Embedding(self.pos_num, self.embedding_dim)
+        self.edge_embedding = nn.Embedding(self.edge_num, self.embedding_dim)
         self.graph_transformer = nn.Sequential(
             *[
                 geo_nn.TransformerConv(
-                    self.transformer_conv_dim,
-                    self.transformer_conv_dim,
+                    self.embedding_dim + self.hidden_size,
+                    self.embedding_dim + self.hidden_size,
                     heads=self.num_transformer_conv_head,
                     dropout=self.dropout,
-                    edge_dim=self.edge_dim,
+                    edge_dim=self.embedding_dim,
                     concat=False,
                 )
             ]
             * self.num_transformer_conv
         )
 
-        self.graph_merging = nn.Linear(2 * self.transformer_conv_dim, 768)
-        self.outer_projection = nn.Linear(768 * 2, self.num_class)
+        self.graph_merging = nn.Linear(
+            2 * (self.embedding_dim + self.hidden_size), self.hidden_size
+        )
+        self.outer_projection = nn.Linear(self.hidden_size * 2, self.num_class)
         self.dropout = nn.Dropout(self.dropout)
 
     def _forward_graph_transformer(self, graph_model, graph_input):
@@ -240,6 +246,7 @@ class GraphLightningModule(pl.LightningModule):
         super().__init__()
         self.config = config
         self.model = GraphModel(config)
+        self.optimizer_name = config["optimizer_name"]
         self.lr = config["lr"]
         self.factor = config["lr_decay"]
         self.patience = config["lr_patience_scheduling"]
@@ -248,7 +255,9 @@ class GraphLightningModule(pl.LightningModule):
         self.training_step_outputs = []
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+        optimizer = OPTIMIZER_DIC[self.optimizer_name](
+            self.model.parameters(), lr=self.lr
+        )
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, "min", factor=self.factor, patience=self.patience
         )
@@ -330,16 +339,18 @@ class GraphLightningModule(pl.LightningModule):
 @click.option("--max_epochs", type=int, default=1)
 @click.option("--val_check_interval", type=float, default=0.20)
 @click.option("--patience_early_stopping", type=float, default=5)
-@click.option("--accumulate_grad_batches", type=int, default=1)
+@click.option("--accumulate_grad_batches", type=int, default=32)
 @click.option("--dropout", type=float, default=0.1)
-@click.option("--pos_dim", type=int, default=16)
-@click.option("--edge_dim", type=int, default=16)
 @click.option("--num_transformer_conv_head", type=int, default=4)
-@click.option("--num_transformer_conv", type=int, default=4)
+@click.option("--num_transformer_conv", type=int, default=6)
 @click.option("--num_class", type=int, default=3)
 @click.option("--seed", type=int, default=42)
 @click.option("--save_top_k", type=int, default=5)
 @click.option("--add_global_token", type=str, default="true")
+@click.option("--log_path", type=click.Path())
+@click.option("--embedding_dim", type=int, default=256)
+@click.option("--optimizer_name", type=str, default="Lamb")
+@click.option("--action", type=str, default="train")
 def train(
     train_data_path: str,
     val_data_path: str,
@@ -355,14 +366,16 @@ def train(
     patience_early_stopping: int,
     accumulate_grad_batches: int,
     dropout: float,
-    edge_dim: int,
-    pos_dim: int,
     num_transformer_conv_head: int,
     num_class: int,
     num_transformer_conv: int,
     seed: int,
     save_top_k: int,
-    add_global_token: str
+    add_global_token: str,
+    log_path: str,
+    embedding_dim: int,
+    optimizer_name: str,
+    action: str,
 ):
     config = {
         "train_data_path": train_data_path,
@@ -378,21 +391,24 @@ def train(
         "patience_early_stopping": patience_early_stopping,
         "accumulate_grad_batches": accumulate_grad_batches,
         "dropout": dropout,
-        "edge_dim": edge_dim,
-        "pos_dim": pos_dim,
         "num_transformer_conv_head": num_transformer_conv_head,
         "pos_num": len(POS_DICT) + 1,
         "edge_num": len(DEP_DICT) + 1,
         "num_class": num_class,
         "num_transformer_conv": num_transformer_conv,
         "seed": seed,
-        "add_global_token": add_global_token == "true"
+        "add_global_token": add_global_token == "true",
+        "hidden_size": AutoConfig.from_pretrained(model_name).hidden_size,
+        "embedding_dim": embedding_dim,
+        "optimizer_name": optimizer_name,
     }
 
     torch.manual_seed(seed)
-    logger.info("Model initialisation...")
+    logger.info(f"Model ({model_name}) initialisation...")
     if config["add_global_token"]:
         logger.info("CLS global token used in Graph Transformer")
+
+    logger.info(f"Optimizer : {optimizer_name}")
     if checkpoint_path:
         logger.info(f"Load the model from checkpoint ...{checkpoint_path[-50:]}")
         model = GraphLightningModule.load_from_checkpoint(
@@ -406,6 +422,7 @@ def train(
     datamodule = GraphLightningDataModule(config)
 
     config_trainer = {
+        "default_root_dir": log_path,
         "max_epochs": max_epochs,
         "val_check_interval": val_check_interval,
         "accumulate_grad_batches": max(accumulate_grad_batches, batch_size),
@@ -417,6 +434,7 @@ def train(
         monitor="val_loss", patience=patience_early_stopping, verbose=False, strict=True
     )
     model_checkpoint_callback = ModelCheckpoint(
+        dirpath=log_path,
         filename="{epoch}-{final_val_accuracy:.3f}",
         monitor="final_val_accuracy",
         save_weights_only=True,
@@ -425,10 +443,21 @@ def train(
     config_trainer["callbacks"] = [early_stopping_callback]
     config_trainer["callbacks"].append(model_checkpoint_callback)
     trainer = pl.Trainer(**config_trainer)
-    trainer.fit(model, datamodule)
 
-    logger.info("Testing")
-    trainer.test(model=model, datamodule=datamodule)
+    if action == "train":
+        logger.info("training...")
+        trainer.fit(model, datamodule)
+
+        logger.info("Testing")
+        trainer.test(model=model, datamodule=datamodule)
+
+    if action == "test":
+        if not checkpoint_path:
+            logger.error(
+                "Checkpoint path should be defined to test a model a the starting of the script"
+            )
+        logger.info("Testing")
+        trainer.test(model=model, datamodule=datamodule)
 
 
 if __name__ == "__main__":

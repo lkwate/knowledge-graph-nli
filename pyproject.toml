@@ -22,6 +22,7 @@ torch-cluster = "^1.5.9"
 torch-spline-conv = "^1.2.1"
 torch-geometric = "^2.0.1"
 ipykernel = "^6.4.1"
+torch-optimizer = "^0.1.0"
 
 [tool.poetry.dev-dependencies]
 
