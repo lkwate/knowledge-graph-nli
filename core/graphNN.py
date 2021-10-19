@@ -109,7 +109,7 @@ class GraphModel(nn.Module):
         )
 
         self.graph_merging = nn.Linear(
-            2 * (self.embedding_dim + self.hidden_size), self.hidden_size
+            3 * (self.embedding_dim + self.hidden_size), self.hidden_size
         )
         self.outer_projection = nn.Linear(self.hidden_size * 2, self.num_class)
         self.dropout = nn.Dropout(self.dropout)
@@ -139,12 +139,21 @@ class GraphModel(nn.Module):
         out_graph2 = self._forward_graph_transformer(
             self.graph_transformer, graph_input2
         )
-        out_graph = torch.cat([out_graph1, out_graph2], dim=-1)
-        out_graph = self.graph_merging(out_graph).unsqueeze(0)
+        out_graph = self._graph_merging_func(out_graph1, out_graph2).unsqueeze(0)
         out = torch.cat([out_bert, out_graph], dim=-1)
         out = self.dropout(out)
         out = self.outer_projection(out)
         return out
+
+    def _graph_merging_func(self, input1, input2):
+        input1 = self.dropout(input1)
+        input2 = self.dropout(input2)
+        out_graph = torch.cat(
+            [input1 + input2, input1 - input2, input1 * input2], dim=-1
+        )
+        out_graph = self.graph_merging(out_graph)
+
+        return out_graph
 
     def compute_loss(self, graph_input1, graph_input2, transformer_input, label):
         out = self.forward(graph_input1, graph_input2, transformer_input)
