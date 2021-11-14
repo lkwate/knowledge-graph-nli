@@ -1,29 +1,10 @@
-# Double Probing For Text Entailment
+# Enhance Natural Language Inference with Dependency Graph
 
-# Setting
+The main goal of this project is to exploit information from Knowledge graphs (external as well as internal) to improve the language understanding of text. By blending the encoded representations of the dependency graph of the reference and the hypothesis in the Recognizing textual entailment (RTE) framework and the plain text encoding (with Roberta), we showed that structural knowledge is an effective source of information augmentation for natural language understanding.
+
+The dependency tree is built here with the library [Spacy](https://spacy.io/usage/linguistic-features#dependency-parse) 
+
+# Training and Evaluation
+```sh
+bash launch-training-graph.sh
 ```
-python3 -m install pip
-pip install -r requirements.txt
-```
-
-# Train
-```
-python3 trainer.py "multinli_1.0_train.csv" "multinli_1.0_dev_matched.csv" 4 --max_epochs 10
-```
-
-# A usecase
-```python
-import os
-from .dp_model.model import DPTransformer
-from .dp_model.tokenizer import DPTokenizer
-
-config = {}
-model = DPTransformer("self-attention", config)
-# model = DPTransformer("FTransform", config)
-
-sentence1, sentence2 = "A self-care serves to breakdown human being limits", "the limits of human could be broken with self-attention"
-scores = model.score(sentence1, sentence2)
-print(scores)
-```
-
-[Universal Dependencies](https://universaldependencies.org/#language-u)
