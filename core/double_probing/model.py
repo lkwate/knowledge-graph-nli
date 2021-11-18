@@ -1,11 +1,11 @@
 """Definition of the Double Probing Transformer"""
 from typing import Any, Dict, Optional
-from transformers import BertModel, BertConfig
+from transformers import BertModel, BertConfig, BertTokenizer
 from transformers.models.bert.modeling_bert import BertEncoder, BertPooler
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from .utils import create_sinusoidal_embeddings, get_masks, BertTokenizer, to_tensor
+from ..utils import create_sinusoidal_embeddings, get_masks, to_tensor
 from pytorch_lightning import LightningModule
 
 

@@ -1,12 +1,11 @@
 import copy
 from loguru import logger
 import torch
-from core.dataset import NLIDataModule
-from core.model import Encoder, DpsaLayer, LightningDPTransformer
+from core.double_probing.dataset import NLIDataModule
+from core.double_probing.model import Encoder, DpsaLayer, LightningDPTransformer
 import click
 from transformers import BertModel, BertTokenizer
 import pytorch_lightning as pl
-from core.model import LightningDPTransformer
 from pytorch_lightning.callbacks import EarlyStopping
 
 
