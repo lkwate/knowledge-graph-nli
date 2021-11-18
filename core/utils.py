@@ -5,6 +5,8 @@ import numpy as np
 import spacy
 from collections import defaultdict
 from transformers import AutoTokenizer
+from dataclasses import dataclass
+from typing import List
 
 nlp = spacy.load("en_core_web_sm")
 
@@ -235,3 +237,8 @@ def to_tensor(
             return word_ids, lengths
         else:
             return word_ids.transpose(0, 1), lengths
+
+
+@dataclass
+class TokenList:
+    tokens: List[str]

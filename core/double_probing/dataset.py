@@ -1,6 +1,5 @@
 """Dataset definition"""
-from torch.utils import data
-from core.utils import to_tensor
+from ..utils import to_tensor
 from typing import Dict, Union, List
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
