@@ -241,4 +241,4 @@ def to_tensor(
 
 @dataclass
 class TokenList:
-    tokens : List[str]
+    tokens: List[str]

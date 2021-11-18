@@ -11,6 +11,7 @@ from loguru import logger
 
 OPTIMIZER_DIC = {"Adam": optim.Adam, "Lamb": torch_optimizer.Lamb}
 
+
 class GraphModel(nn.Module):
 
     criterion = nn.CrossEntropyLoss()
@@ -51,7 +52,7 @@ class GraphModel(nn.Module):
         )
         self.outer_projection = nn.Linear(self.hidden_size * 2, self.num_class)
         self.dropout = nn.Dropout(self.dropout)
-        
+
         if self.add_global_token:
             self.graph_aggregator = lambda x: x[-1, :]
         else:
@@ -62,18 +63,21 @@ class GraphModel(nn.Module):
         edge_index = graph_input.edge_index
         x = graph_input.x
         ptr = graph_input.ptr
-        
+
         for layer in graph_model:
             x = layer(x=x, edge_index=edge_index, edge_attr=edge_attr)
-            
-        out = [self.graph_aggregator(x[ptr[i]: ptr[i + 1], :]) for i in range(ptr.shape[0] - 1)]
+
+        out = [
+            self.graph_aggregator(x[ptr[i] : ptr[i + 1], :])
+            for i in range(ptr.shape[0] - 1)
+        ]
         out = torch.stack(out)
-            
+
         return out
 
     def forward(self, graph_input1, graph_input2, transformer_input, tokens1, tokens2):
         transformer_input = {k: v.squeeze(1) for k, v in transformer_input.items()}
-        
+
         graph_input1 = self._pre_embedding(graph_input1, tokens1)
         graph_input2 = self._pre_embedding(graph_input2, tokens2)
 
@@ -136,7 +140,6 @@ class GraphModel(nn.Module):
         return graph_input
 
 
-
 class GraphLightningModule(pl.LightningModule):
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
@@ -168,12 +171,14 @@ class GraphLightningModule(pl.LightningModule):
         loss, accuracy = self._metric_forward(batch, batch_idx)
         output = {"loss": loss, "train_accuracy": accuracy}
         self.log_dict(output)
-        
+
         return output
 
     def _metric_forward(self, batch, batch_idx):
         graph_input1, graph_input2, transformer_input, tokens1, tokens2, label = batch
-        out = self.model(graph_input1, graph_input2, transformer_input, tokens1, tokens2)
+        out = self.model(
+            graph_input1, graph_input2, transformer_input, tokens1, tokens2
+        )
         loss = self.model.criterion(out, label.long())
         predicted_class = torch.argmax(out, dim=-1).item()
         acc = int(label.long().item() == predicted_class)
@@ -199,4 +204,3 @@ class GraphLightningModule(pl.LightningModule):
         accuracy = torch.mean(out).item()
 
         self.log("final_val_accuracy", accuracy, prog_bar=True)
-

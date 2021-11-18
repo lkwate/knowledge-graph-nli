@@ -62,13 +62,21 @@ class GraphDataset(Dataset):
             sentence2, self.tokenizer, add_global_token=self.add_global_token
         )
         input_sentence = self.tokenizer(sentence1, sentence2, return_tensors="pt")
-        
-        graph_input1 = Data(x=graph1["pos_tag"].unsqueeze(-1), edge_index=graph1["edge_index"], edge_attr=graph1["edge_attr"])
+
+        graph_input1 = Data(
+            x=graph1["pos_tag"].unsqueeze(-1),
+            edge_index=graph1["edge_index"],
+            edge_attr=graph1["edge_attr"],
+        )
         tokens1 = TokenList(tokens=graph1["tokens"])
-        
-        graph_input2 = Data(x=graph2["pos_tag"].unsqueeze(-1), edge_index=graph2["edge_index"], edge_attr=graph2["edge_attr"])
+
+        graph_input2 = Data(
+            x=graph2["pos_tag"].unsqueeze(-1),
+            edge_index=graph2["edge_index"],
+            edge_attr=graph2["edge_attr"],
+        )
         tokens2 = TokenList(tokens=graph2["tokens"])
-        
+
         return graph_input1, graph_input2, input_sentence, tokens1, tokens2, label
 
 
@@ -76,7 +84,7 @@ class MixedCollater(Collater):
     def __init__(self, follow_batch, exclude_keys):
         self.follow_batch = follow_batch
         self.exclude_keys = exclude_keys
-        
+
     def collate(self, batch):
         elem = batch[0]
         if isinstance(elem, TokenList):
@@ -86,7 +94,8 @@ class MixedCollater(Collater):
             return output
         else:
             return super().collate(batch)
-        
+
+
 class MixedDataLoader(DataLoader):
     r"""A data loader which merges data objects from a
     :class:`torch_geometric.data.Dataset` to a mini-batch.
@@ -106,6 +115,7 @@ class MixedDataLoader(DataLoader):
         **kwargs (optional): Additional arguments of
             :class:`torch.utils.data.DataLoader`.
     """
+
     def __init__(
         self,
         dataset: Union[Dataset, List[Data], List[HeteroData]],
@@ -123,10 +133,15 @@ class MixedDataLoader(DataLoader):
         self.follow_batch = follow_batch
         self.exclude_keys = exclude_keys
 
-        super().__init__(dataset, batch_size, shuffle,
-                         collate_fn=MixedCollater(follow_batch,
-                                             exclude_keys), **kwargs)
-        
+        super().__init__(
+            dataset,
+            batch_size,
+            shuffle,
+            collate_fn=MixedCollater(follow_batch, exclude_keys),
+            **kwargs,
+        )
+
+
 class GraphLightningDataModule(pl.LightningDataModule):
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
@@ -166,7 +181,11 @@ class GraphLightningDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return MixedDataLoader(self.val_dataset, batch_size=1, num_workers=self.num_workers)
+        return MixedDataLoader(
+            self.val_dataset, batch_size=1, num_workers=self.num_workers
+        )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
-        return MixedDataLoader(self.test_dataset, batch_size=1, num_workers=self.num_workers)
+        return MixedDataLoader(
+            self.test_dataset, batch_size=1, num_workers=self.num_workers
+        )

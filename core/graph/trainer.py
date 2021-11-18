@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 import torch
 from ..utils import *
-from transformers import  AutoConfig
+from transformers import AutoConfig
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from .model import GraphLightningModule
 from .dataset import GraphLightningDataModule
