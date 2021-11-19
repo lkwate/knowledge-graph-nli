@@ -122,7 +122,7 @@ def main(
     )
     model_checkpoint_callback = ModelCheckpoint(
         dirpath=log_path,
-        filename="{epoch}-{final_val_accuracy:.3f}",
+        filename="{epoch}-{val_accuracy:.3f}",
         monitor="final_val_accuracy",
         save_weights_only=True,
         save_top_k=save_top_k,

@@ -198,9 +198,3 @@ class GraphLightningModule(pl.LightningModule):
         self.log_dict(output)
 
         return output
-
-    def validation_epoch_end(self, outputs):
-        out = torch.stack(list(map(lambda item: item["val_accuracy"], outputs))).float()
-        accuracy = torch.mean(out).item()
-
-        self.log("final_val_accuracy", accuracy, prog_bar=True)
