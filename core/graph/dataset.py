@@ -2,8 +2,8 @@ import pytorch_lightning as pl
 import torch
 from ..utils import *
 from transformers import AutoTokenizer
-from torch.utils.data import Dataset, DataLoader
-from torch_geometric.loader.dataloader import Collater
+from torch.utils.data import Dataset
+from torch_geometric.loader.dataloader import Collater, DataLoader
 from torch_geometric.data import Data, HeteroData
 from typing import Any, Dict, Union, List
 import pandas as pd
@@ -61,7 +61,7 @@ class GraphDataset(Dataset):
         graph2 = dependency_tree(
             sentence2, self.tokenizer, add_global_token=self.add_global_token
         )
-        input_sentence = self.tokenizer(sentence1, sentence2, return_tensors="pt")
+        input_sentence = self.tokenizer(sentence1, sentence2, truncation=True, padding="max_length", return_tensors="pt")
 
         graph_input1 = Data(
             x=graph1["pos_tag"].unsqueeze(-1),
@@ -96,7 +96,7 @@ class MixedCollater(Collater):
             return super().collate(batch)
 
 
-class MixedDataLoader(DataLoader):
+class MixedDataLoader(torch.utils.data.DataLoader):
     r"""A data loader which merges data objects from a
     :class:`torch_geometric.data.Dataset` to a mini-batch.
     Data objects can be either of type :class:`~torch_geometric.data.Data` or
@@ -119,7 +119,7 @@ class MixedDataLoader(DataLoader):
     def __init__(
         self,
         dataset: Union[Dataset, List[Data], List[HeteroData]],
-        batch_size: int = 1,
+        batch_size: int,
         shuffle: bool = False,
         follow_batch: List[str] = [],
         exclude_keys: List[str] = [],
@@ -163,7 +163,8 @@ class GraphLightningDataModule(pl.LightningDataModule):
             err_msg = "test_data_path not found in the dataset configuration dictionary"
             logger.error(err_msg)
             raise ValueError(err_msg)
-
+        
+        self.batch_size = self.config["batch_size"]
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
         logger.info("Train dataset...")
         self.train_dataset = GraphDataset(self.tokenizer, config, "train")
@@ -177,15 +178,15 @@ class GraphLightningDataModule(pl.LightningDataModule):
         self,
     ) -> Union[DataLoader, List[DataLoader], Dict[str, DataLoader]]:
         return MixedDataLoader(
-            self.train_dataset, batch_size=1, shuffle=True, num_workers=self.num_workers
+            self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return MixedDataLoader(
-            self.val_dataset, batch_size=1, num_workers=self.num_workers
+            self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers
         )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return MixedDataLoader(
-            self.test_dataset, batch_size=1, num_workers=self.num_workers
+            self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers
         )

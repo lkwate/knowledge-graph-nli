@@ -62,7 +62,7 @@ class GraphModel(nn.Module):
         edge_attr = graph_input.edge_attr
         edge_index = graph_input.edge_index
         x = graph_input.x
-        ptr = graph_input.ptr
+        ptr = graph_input.ptr.long()
 
         for layer in graph_model:
             x = layer(x=x, edge_index=edge_index, edge_attr=edge_attr)
@@ -180,10 +180,10 @@ class GraphLightningModule(pl.LightningModule):
             graph_input1, graph_input2, transformer_input, tokens1, tokens2
         )
         loss = self.model.criterion(out, label.long())
-        predicted_class = torch.argmax(out, dim=-1).item()
-        acc = int(label.long().item() == predicted_class)
+        predicted_class = torch.argmax(out, dim=-1)
+        acc = (label.long() == predicted_class).float().mean()
 
-        return loss, torch.tensor(acc)
+        return loss, acc
 
     def validation_step(self, batch, batch_idx):
         loss, accuracy = self._metric_forward(batch, batch_idx)
