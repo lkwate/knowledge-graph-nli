@@ -33,7 +33,7 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 @click.option("--num_class", type=int, default=3)
 @click.option("--seed", type=int, default=42)
 @click.option("--save_top_k", type=int, default=5)
-@click.option("--add_global_token", type=str, default="true")
+@click.option("--add_global_token", is_flag=True)
 @click.option("--log_path", type=click.Path())
 @click.option("--embedding_dim", type=int, default=256)
 @click.option("--optimizer_name", type=str, default="Lamb")
@@ -58,7 +58,7 @@ def main(
     num_transformer_conv: int,
     seed: int,
     save_top_k: int,
-    add_global_token: str,
+    add_global_token: bool,
     log_path: str,
     embedding_dim: int,
     optimizer_name: str,
@@ -84,7 +84,7 @@ def main(
         "num_class": num_class,
         "num_transformer_conv": num_transformer_conv,
         "seed": seed,
-        "add_global_token": add_global_token == "true",
+        "add_global_token": add_global_token,
         "hidden_size": AutoConfig.from_pretrained(model_name).hidden_size,
         "embedding_dim": embedding_dim,
         "optimizer_name": optimizer_name,
