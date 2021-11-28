@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 import torch
 from ..utils import *
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 from torch.utils.data import Dataset
 from torch_geometric.loader.dataloader import Collater, DataLoader
 from torch_geometric.data import Data, HeteroData
@@ -61,7 +61,7 @@ class GraphDataset(Dataset):
         graph2 = dependency_tree(
             sentence2, self.tokenizer, add_global_token=self.add_global_token
         )
-        input_sentence = self.tokenizer(sentence1, sentence2, truncation=True, padding="max_length", return_tensors="pt")
+        transformer_input = self.tokenizer(sentence1, sentence2)
 
         graph_input1 = Data(
             x=graph1["pos_tag"].unsqueeze(-1),
@@ -77,23 +77,48 @@ class GraphDataset(Dataset):
         )
         tokens2 = TokenList(tokens=graph2["tokens"])
 
-        return graph_input1, graph_input2, input_sentence, tokens1, tokens2, label
+        output = {
+            "graph_input1": graph_input1,
+            "graph_input2": graph_input2,
+            "transformer_input": transformer_input,
+            "tokens1": tokens1,
+            "tokens2": tokens2,
+            "label": label,
+        }
+
+        return output
 
 
 class MixedCollater(Collater):
-    def __init__(self, follow_batch, exclude_keys):
-        self.follow_batch = follow_batch
-        self.exclude_keys = exclude_keys
+    def __init__(self, tokenizer: PreTrainedTokenizerBase, follow_batch, exclude_keys):
+        self.tokenizer = tokenizer
+        self.torch_geometric_collator = Collater(follow_batch, exclude_keys)
+
+
+    def _collate_token_list(self, batch):
+        output = []
+        for item in batch:
+            output.extend(item.tokens)
+        return output
 
     def collate(self, batch):
-        elem = batch[0]
-        if isinstance(elem, TokenList):
-            output = []
-            for item in batch:
-                output.extend(item.tokens)
-            return output
-        else:
-            return super().collate(batch)
+        tokens1, tokens2, transformer_input = [], [], []
+        for feat in batch:
+            tokens1.append(feat["tokens1"])
+            tokens2.append(feat["tokens2"])
+            transformer_input.append(feat["transformer_input"])
+            del feat["tokens1"], feat["tokens2"], feat["transformer_input"]
+
+        tokens1 = self._collate_token_list(tokens1)
+        tokens2 = self._collate_token_list(tokens2)
+        transformer_input = self.tokenizer.pad(transformer_input, return_tensors="pt")
+        
+        batch = self.torch_geometric_collator.collate(batch)
+        batch["tokens1"] = tokens1
+        batch["tokens2"] = tokens2
+        batch["transformer_input"] = transformer_input
+        
+        return batch
 
 
 class MixedDataLoader(torch.utils.data.DataLoader):
@@ -120,12 +145,13 @@ class MixedDataLoader(torch.utils.data.DataLoader):
         self,
         dataset: Union[Dataset, List[Data], List[HeteroData]],
         batch_size: int,
+        tokenizer: PreTrainedTokenizerBase,
         shuffle: bool = False,
         follow_batch: List[str] = [],
         exclude_keys: List[str] = [],
         **kwargs,
     ):
-
+        self.tokenizer = tokenizer
         if "collate_fn" in kwargs:
             del kwargs["collate_fn"]
 
@@ -137,7 +163,7 @@ class MixedDataLoader(torch.utils.data.DataLoader):
             dataset,
             batch_size,
             shuffle,
-            collate_fn=MixedCollater(follow_batch, exclude_keys),
+            collate_fn=MixedCollater(self.tokenizer, follow_batch, exclude_keys),
             **kwargs,
         )
 
@@ -163,7 +189,7 @@ class GraphLightningDataModule(pl.LightningDataModule):
             err_msg = "test_data_path not found in the dataset configuration dictionary"
             logger.error(err_msg)
             raise ValueError(err_msg)
-        
+
         self.batch_size = self.config["batch_size"]
         self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
         logger.info("Train dataset...")
@@ -178,15 +204,25 @@ class GraphLightningDataModule(pl.LightningDataModule):
         self,
     ) -> Union[DataLoader, List[DataLoader], Dict[str, DataLoader]]:
         return MixedDataLoader(
-            self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers
+            self.train_dataset,
+            batch_size=self.batch_size,
+            tokenizer=self.tokenizer,
+            shuffle=True,
+            num_workers=self.num_workers,
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return MixedDataLoader(
-            self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers
+            self.val_dataset,
+            batch_size=self.batch_size,
+            tokenizer=self.tokenizer,
+            num_workers=self.num_workers,
         )
 
     def test_dataloader(self) -> Union[DataLoader, List[DataLoader]]:
         return MixedDataLoader(
-            self.test_dataset, batch_size=self.batch_size, num_workers=self.num_workers
+            self.test_dataset,
+            batch_size=self.batch_size,
+            tokenizer=self.tokenizer,
+            num_workers=self.num_workers,
         )

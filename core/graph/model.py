@@ -175,7 +175,14 @@ class GraphLightningModule(pl.LightningModule):
         return output
 
     def _metric_forward(self, batch, batch_idx):
-        graph_input1, graph_input2, transformer_input, tokens1, tokens2, label = batch
+        graph_input1, graph_input2, transformer_input, tokens1, tokens2, label = (
+            batch["graph_input1"],
+            batch["graph_input2"],
+            batch["transformer_input"],
+            batch["tokens1"],
+            batch["tokens2"],
+            batch["label"],
+        )
         out = self.model(
             graph_input1, graph_input2, transformer_input, tokens1, tokens2
         )
