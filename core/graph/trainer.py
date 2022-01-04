@@ -19,7 +19,7 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 @click.argument("test_data_path", type=click.Path(exists=True))
 @click.argument("batch_size", type=int)
 @click.option("--checkpoint_path", type=click.Path(exists=True))
-@click.option("--model_name", type=str, default="roberta-base")
+@click.option("--model_name", type=str, default="lkwate/roberta-base-mnli")
 @click.option("--lr", type=float, default=1e-5)
 @click.option("--lr_decay", type=float, default=0.8)
 @click.option("--lr_patience_scheduling", type=int, default=3)
@@ -34,6 +34,7 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 @click.option("--seed", type=int, default=42)
 @click.option("--save_top_k", type=int, default=5)
 @click.option("--add_global_token", is_flag=True)
+@click.option("--freeze_bert", is_flag=True)
 @click.option("--log_path", type=click.Path())
 @click.option("--embedding_dim", type=int, default=256)
 @click.option("--optimizer_name", type=str, default="Lamb")
@@ -63,6 +64,7 @@ def main(
     embedding_dim: int,
     optimizer_name: str,
     action: str,
+    freeze_bert: bool,
 ):
     config = {
         "train_data_path": train_data_path,
@@ -88,6 +90,7 @@ def main(
         "hidden_size": AutoConfig.from_pretrained(model_name).hidden_size,
         "embedding_dim": embedding_dim,
         "optimizer_name": optimizer_name,
+        "freeze_bert": freeze_bert
     }
 
     torch.manual_seed(seed)
