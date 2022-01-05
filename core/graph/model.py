@@ -5,7 +5,7 @@ import torch_geometric.nn as geo_nn
 import pytorch_lightning as pl
 import torch
 from ..utils import *
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, RobertaTokenizer
 from typing import Any, Dict, Tuple, List
 from loguru import logger
 
@@ -31,7 +31,7 @@ class GraphModel(nn.Module):
         self.freeze_bert = config.get("freeze_bert")
 
         self.bert = AutoModel.from_pretrained(self.model_name)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer = RobertaTokenizer.from_pretrained(self.model_name)
         self.pos_embedding = nn.Embedding(self.pos_num, self.embedding_dim)
         self.edge_embedding = nn.Embedding(self.edge_num, self.embedding_dim)
         self.graph_transformer = nn.Sequential(
