@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 import torch
 from ..utils import *
-from transformers import AutoTokenizer, PreTrainedTokenizerBase
+from transformers import RobertaTokenizer, PreTrainedTokenizerBase
 from torch.utils.data import Dataset
 from torch_geometric.loader.dataloader import Collater, DataLoader
 from torch_geometric.data import Data, HeteroData
@@ -16,7 +16,7 @@ DATASET_TYPE = {"train", "val", "test"}
 class GraphDataset(Dataset):
     def __init__(
         self,
-        tokenizer: AutoTokenizer,
+        tokenizer: RobertaTokenizer,
         config: Dict[str, Union[str, float, int]],
         type: str,
     ) -> None:
@@ -191,7 +191,7 @@ class GraphLightningDataModule(pl.LightningDataModule):
             raise ValueError(err_msg)
 
         self.batch_size = self.config["batch_size"]
-        self.tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
+        self.tokenizer = RobertaTokenizer.from_pretrained(config["model_name"])
         logger.info("Train dataset...")
         self.train_dataset = GraphDataset(self.tokenizer, config, "train")
         logger.info("Validation dataset...")
