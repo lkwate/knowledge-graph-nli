@@ -58,15 +58,10 @@ class GraphModel(nn.Module):
             self.graph_aggregator = lambda x: x[-1, :]
         else:
             self.graph_aggregator = lambda x: torch.mean(x, dim=0)
-            
+    
         if self.freeze_bert:
-            self.bert_forward_fn = self._freeze_bert_forward_fn
-        else:
-            self.bert_forward_fn = lambda inputs, bert=self.bert: bert(**inputs)["pooler_output"]
-
-    def _freeze_bert_forward_fn(self, inputs):
-        with torch.no_grad():
-            return self.bert(**inputs)["pooler_output"]
+            for param in self.bert.parameters():
+                param.required_grad = False
         
     def _forward_graph_transformer(self, graph_model, graph_input):
         edge_attr = graph_input.edge_attr
@@ -91,7 +86,7 @@ class GraphModel(nn.Module):
         graph_input1 = self._pre_embedding(graph_input1, tokens1)
         graph_input2 = self._pre_embedding(graph_input2, tokens2)
 
-        out_bert = self.bert_forward_fn(transformer_input)
+        out_bert = self.bert(**transformer_input)["pooler_output"]
         out_bert = self.dropout(out_bert)
         out_graph1 = self._forward_graph_transformer(
             self.graph_transformer, graph_input1
