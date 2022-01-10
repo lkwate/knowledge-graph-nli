@@ -81,8 +81,6 @@ class GraphModel(nn.Module):
         return out
 
     def forward(self, graph_input1, graph_input2, transformer_input, tokens1, tokens2):
-        transformer_input = {k: v.squeeze(1) for k, v in transformer_input.items()}
-
         graph_input1 = self._pre_embedding(graph_input1, tokens1)
         graph_input2 = self._pre_embedding(graph_input2, tokens2)
 
