@@ -29,6 +29,7 @@ class GraphModel(nn.Module):
         self.add_global_token = config["add_global_token"]
         self.hidden_size = config["hidden_size"]
         self.freeze_bert = config.get("freeze_bert")
+        self.gamma = config["gamma"]
 
         self.bert = AutoModel.from_pretrained(self.model_name)
         self.tokenizer = RobertaTokenizer.from_pretrained(self.model_name)
@@ -51,7 +52,7 @@ class GraphModel(nn.Module):
         self.graph_merging = nn.Linear(
             3 * (self.embedding_dim + self.hidden_size), self.hidden_size
         )
-        self.outer_projection = nn.Linear(self.hidden_size * 2, self.num_class)
+        self.outer_projection = nn.Linear(self.hidden_size, self.num_class)
         self.dropout = nn.Dropout(self.dropout)
 
         if self.add_global_token:
@@ -93,7 +94,7 @@ class GraphModel(nn.Module):
             self.graph_transformer, graph_input2
         )
         out_graph = self._graph_merging_func(out_graph1, out_graph2)
-        out = torch.cat([out_bert, out_graph], dim=-1)
+        out = out_graph * self.gamma + out_bert * (1 - self.gamma)
         out = self.dropout(out)
         out = self.outer_projection(out)
         return out

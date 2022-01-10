@@ -39,6 +39,7 @@ os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 @click.option("--embedding_dim", type=int, default=256)
 @click.option("--optimizer_name", type=str, default="Lamb")
 @click.option("--action", type=str, default="train")
+@click.option("--gamma", type=float, default=0.9)
 def main(
     train_data_path: str,
     val_data_path: str,
@@ -65,6 +66,7 @@ def main(
     optimizer_name: str,
     action: str,
     freeze_bert: bool,
+    gamma: float,
 ):
     config = {
         "train_data_path": train_data_path,
@@ -90,7 +92,8 @@ def main(
         "hidden_size": AutoConfig.from_pretrained(model_name).hidden_size,
         "embedding_dim": embedding_dim,
         "optimizer_name": optimizer_name,
-        "freeze_bert": freeze_bert
+        "freeze_bert": freeze_bert,
+        "gamma": gamma
     }
 
     torch.manual_seed(seed)
