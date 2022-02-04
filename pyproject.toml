@@ -26,6 +26,11 @@ torch-optimizer = "^0.1.0"
 gensim = "^4.1.2"
 stanford-corenlp = "^3.9.2"
 nltk = "^3.6.5"
+bitarray = "^2.3.5"
+hydra-core = "^1.1.1"
+omegaconf = "^2.1.1"
+sacrebleu = "^2.0.0"
+xmanager = "^0.1.4"
 
 [tool.poetry.dev-dependencies]
 
